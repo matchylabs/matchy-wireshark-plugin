@@ -17,6 +17,7 @@
 //! queries them against a matchy threat database, and adds custom fields
 //! to the packet tree for display and filtering.
 
+mod wireshark_ffi;
 mod postdissector;
 mod display_filter;
 mod threats;
@@ -80,7 +81,7 @@ pub extern "C" fn matchy_wireshark_load_database(path: *const c_char) -> c_int {
         Err(_) => return -1,
     };
 
-    match matchy::Database::open(path_str) {
+    match matchy::Database::from(path_str).open() {
         Ok(db) => {
             if let Ok(mut threat_db) = THREAT_DB.lock() {
                 *threat_db = Some(Arc::new(db));

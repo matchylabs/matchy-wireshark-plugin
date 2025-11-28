@@ -131,14 +131,14 @@ mod tests {
     #[test]
     fn test_threat_data_from_json() {
         let json = json!({
-            \"threat_level\": \"critical\",
-            \"category\": \"malware\",
-            \"source\": \"abuse.ch\"
+            "threat_level": "critical",
+            "category": "malware",
+            "source": "abuse.ch"
         });
 
         let threat = ThreatData::from_json(&json).unwrap();
         assert_eq!(threat.level, ThreatLevel::Critical);
-        assert_eq!(threat.category, \"malware\");
-        assert_eq!(threat.source, \"abuse.ch\");
+        assert_eq!(threat.category, "malware");
+        assert_eq!(threat.source, "abuse.ch");
     }
 }
