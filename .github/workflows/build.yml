@@ -185,22 +185,46 @@ jobs:
       
       - name: Install Wireshark
         run: |
-          # Download and install Wireshark (includes development headers)
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri "https://2.na.dl.wireshark.org/win64/Wireshark-4.4.2-x64.exe" -OutFile "wireshark-installer.exe"
-          Start-Process -FilePath "wireshark-installer.exe" -Args "/S /D=C:\Wireshark" -Wait
+          # Install Wireshark using Chocolatey (pre-installed on GitHub Actions)
+          choco install wireshark --yes --no-progress
+
+          # Find where Wireshark was installed
+          $wiresharkPath = (Get-Command tshark -ErrorAction SilentlyContinue).Source
+          if ($wiresharkPath) {
+            $wiresharkDir = Split-Path -Parent (Split-Path -Parent $wiresharkPath)
+            Write-Host "Found Wireshark at: $wiresharkDir"
+            echo "WIRESHARK_DIR=$wiresharkDir" >> $env:GITHUB_ENV
+          } else {
+            # Fallback to common install locations
+            $possiblePaths = @(
+              "C:\Program Files\Wireshark",
+              "C:\Program Files (x86)\Wireshark"
+            )
+            foreach ($path in $possiblePaths) {
+              if (Test-Path $path) {
+                Write-Host "Found Wireshark at: $path"
+                echo "WIRESHARK_DIR=$path" >> $env:GITHUB_ENV
+                break
+              }
+            }
+          }
         shell: pwsh
         
-      - name: Set up build environment
+      - name: Verify Wireshark installation
         run: |
-          echo "WIRESHARK_DIR=C:\Wireshark" >> $env:GITHUB_ENV
-          echo "C:\Wireshark" >> $env:GITHUB_PATH
+          Write-Host "WIRESHARK_DIR: $env:WIRESHARK_DIR"
+          if (Test-Path "$env:WIRESHARK_DIR") {
+            Write-Host "Wireshark directory exists"
+            Get-ChildItem "$env:WIRESHARK_DIR" | Select-Object -First 10
+          } else {
+            Write-Error "Wireshark directory not found!"
+          }
         shell: pwsh
         
       - name: Build
-        run: cargo build --release
-        env:
-          WIRESHARK_DIR: C:\Wireshark
+        run: |
+          echo "Building with WIRESHARK_DIR: $env:WIRESHARK_DIR"
+          cargo build --release
           
       - name: Package
         run: |
