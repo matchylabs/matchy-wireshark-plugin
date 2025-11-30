@@ -2,20 +2,6 @@
 //!
 //! Real-time threat intelligence matching for packet analysis.
 //! Integrates matchy threat databases into Wireshark as a postdissector plugin.
-//!
-//! # Features
-//!
-//! - Real-time IP/domain threat lookups during packet capture
-//! - Custom display filters for threat queries
-//! - Automatic packet colorization by threat level
-//! - Sub-millisecond performance on 100K+ indicators
-//!
-//! # Architecture
-//!
-//! The plugin acts as a Wireshark postdissector, processing packets after
-//! normal dissection. It extracts source/destination IPs and domains,
-//! queries them against a matchy threat database, and adds custom fields
-//! to the packet tree for display and filtering.
 
 mod wireshark_ffi;
 mod postdissector;
@@ -24,102 +10,334 @@ mod threats;
 
 use libc::{c_char, c_int};
 use std::ffi::CStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+use std::ptr;
 
-/// Global threat database (lazily loaded)
-static THREAT_DB: Mutex<Option<Arc<matchy::Database>>> = Mutex::new(None);
+/// Global threat database handle
+static THREAT_DB: Mutex<Option<matchy::Database>> = Mutex::new(None);
 
-/// Plugin version
-const VERSION: &str = "0.1.0";
+/// Global protocol ID (set during registration)
+static mut PROTO_MATCHY: c_int = -1;
 
-/// Plugin name
-const PLUGIN_NAME: &str = "Matchy";
+/// Header field IDs
+static mut HF_THREAT_DETECTED: c_int = -1;
+static mut HF_THREAT_LEVEL: c_int = -1;
+static mut HF_THREAT_CATEGORY: c_int = -1;
+static mut HF_THREAT_SOURCE: c_int = -1;
+static mut HF_THREAT_INDICATOR: c_int = -1;
 
-/// Plugin description
-const PLUGIN_DESCRIPTION: &str = "Real-time threat intelligence matching for packet analysis";
+/// Subtree index
+static mut ETT_MATCHY: c_int = -1;
 
-/// Wireshark plugin entry point
-/// Called when plugin is loaded by Wireshark
+// ============================================================================
+// Plugin Version Information
+// ============================================================================
+
+/// Plugin version string (null-terminated)
+#[no_mangle]
+#[used]
+pub static plugin_version: [c_char; 6] = [b'0' as i8, b'.' as i8, b'1' as i8, b'.' as i8, b'0' as i8, 0];
+
+/// Major version of Wireshark this plugin is built for
+#[no_mangle]
+#[used]
+pub static plugin_want_major: c_int = 4;
+
+/// Minor version of Wireshark this plugin is built for
+#[no_mangle]
+#[used]
+pub static plugin_want_minor: c_int = 6;
+
+// ============================================================================
+// Proto Plugin Structure
+// ============================================================================
+
+/// Proto plugin structure - tells Wireshark which functions to call
+#[repr(C)]
+struct ProtoPlugin {
+    register_protoinfo: Option<unsafe extern "C" fn()>,
+    register_handoff: Option<unsafe extern "C" fn()>,
+}
+
+/// Static plugin descriptor
+static PROTO_PLUGIN: ProtoPlugin = ProtoPlugin {
+    register_protoinfo: Some(proto_register_matchy),
+    register_handoff: Some(proto_reg_handoff_matchy),
+};
+
+// ============================================================================
+// Plugin Entry Point
+// ============================================================================
+
+extern "C" {
+    fn proto_register_plugin(plugin: *const ProtoPlugin);
+}
+
+/// Plugin registration - called by Wireshark at startup
+/// 
+/// This registers our plugin with Wireshark's plugin system.
+/// Wireshark will then call our register_protoinfo and register_handoff
+/// functions at the appropriate times during initialization.
 #[no_mangle]
 pub extern "C" fn plugin_register() {
-    // Register the postdissector
-    // This will be called for each packet after normal dissection
-    postdissector::register_postdissector();
-}
-
-/// Get plugin information (called by Wireshark)
-#[no_mangle]
-pub extern "C" fn plugin_register_info(info: *mut plugin_info_t) {
-    if info.is_null() {
-        return;
-    }
-
     unsafe {
-        (*info).version = VERSION.as_ptr() as *const c_char;
-        (*info).name = PLUGIN_NAME.as_ptr() as *const c_char;
-        (*info).description = PLUGIN_DESCRIPTION.as_ptr() as *const c_char;
+        proto_register_plugin(&PROTO_PLUGIN);
     }
 }
 
-/// Load a threat database
-///
-/// # Arguments
-///
-/// * `path` - C string path to .mxy threat database file
-///
-/// # Returns
-///
-/// 0 on success, -1 on error
+// ============================================================================
+// Protocol Registration (called by Wireshark during protocol init)
+// ============================================================================
+
+/// Called by Wireshark to register our protocol and fields
 #[no_mangle]
-pub extern "C" fn matchy_wireshark_load_database(path: *const c_char) -> c_int {
+unsafe extern "C" fn proto_register_matchy() {
+    use wireshark_ffi::*;
+    
+    // Register the protocol
+    static NAME: &[u8] = b"Matchy Threat Intelligence\0";
+    static SHORT_NAME: &[u8] = b"Matchy\0";
+    static FILTER_NAME: &[u8] = b"matchy\0";
+    
+    PROTO_MATCHY = proto_register_protocol(
+        NAME.as_ptr() as *const c_char,
+        SHORT_NAME.as_ptr() as *const c_char,
+        FILTER_NAME.as_ptr() as *const c_char,
+    );
+    
+    eprintln!("matchy: protocol registered with id {}", PROTO_MATCHY);
+    
+    // Register header fields
+    register_fields();
+    
+    eprintln!("matchy: fields registered, HF_THREAT_DETECTED={}", HF_THREAT_DETECTED);
+}
+
+/// Static storage for header field registration info
+/// These MUST be static because Wireshark keeps pointers to them
+static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = unsafe {
+    use wireshark_ffi::*;
+    [
+        hf_register_info {
+            p_id: std::ptr::null_mut(), // Will be set at runtime
+            hfinfo: header_field_info {
+                name: b"Threat Detected\0".as_ptr() as *const c_char,
+                abbrev: b"matchy.threat_detected\0".as_ptr() as *const c_char,
+                type_: FT_BOOLEAN,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: b"Whether this packet matches a threat indicator\0".as_ptr() as *const c_char,
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: b"Threat Level\0".as_ptr() as *const c_char,
+                abbrev: b"matchy.level\0".as_ptr() as *const c_char,
+                type_: FT_STRINGZ,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: b"Severity level of the threat\0".as_ptr() as *const c_char,
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: b"Category\0".as_ptr() as *const c_char,
+                abbrev: b"matchy.category\0".as_ptr() as *const c_char,
+                type_: FT_STRINGZ,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: b"Type of threat (malware, phishing, c2, etc.)\0".as_ptr() as *const c_char,
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: b"Source\0".as_ptr() as *const c_char,
+                abbrev: b"matchy.source\0".as_ptr() as *const c_char,
+                type_: FT_STRINGZ,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: b"Threat intelligence feed source\0".as_ptr() as *const c_char,
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: b"Indicator\0".as_ptr() as *const c_char,
+                abbrev: b"matchy.indicator\0".as_ptr() as *const c_char,
+                type_: FT_STRINGZ,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: b"The matched threat indicator\0".as_ptr() as *const c_char,
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+    ]
+};
+
+/// Static storage for subtree indices
+static mut ETT_ARRAY: [*mut c_int; 1] = [std::ptr::null_mut()];
+
+/// Register header fields for display and filtering
+unsafe fn register_fields() {
+    use wireshark_ffi::*;
+    
+    // Set up the p_id pointers to point to our static field ID variables
+    HF_ARRAY[0].p_id = std::ptr::addr_of_mut!(HF_THREAT_DETECTED);
+    HF_ARRAY[1].p_id = std::ptr::addr_of_mut!(HF_THREAT_LEVEL);
+    HF_ARRAY[2].p_id = std::ptr::addr_of_mut!(HF_THREAT_CATEGORY);
+    HF_ARRAY[3].p_id = std::ptr::addr_of_mut!(HF_THREAT_SOURCE);
+    HF_ARRAY[4].p_id = std::ptr::addr_of_mut!(HF_THREAT_INDICATOR);
+    
+    proto_register_field_array(
+        PROTO_MATCHY,
+        HF_ARRAY.as_mut_ptr(),
+        HF_ARRAY.len() as c_int,
+    );
+    
+    // Register subtree
+    ETT_ARRAY[0] = std::ptr::addr_of_mut!(ETT_MATCHY);
+    proto_register_subtree_array(
+        ETT_ARRAY.as_ptr(),
+        ETT_ARRAY.len() as c_int,
+    );
+}
+
+// ============================================================================
+// Handoff Registration (called by Wireshark after all protocols registered)
+// ============================================================================
+
+/// Called by Wireshark to register our postdissector
+/// This is called after all protocols are registered, so we can safely
+/// create our dissector handle and register it.
+#[no_mangle]
+unsafe extern "C" fn proto_reg_handoff_matchy() {
+    use wireshark_ffi::*;
+    
+    // Try to load database from environment variable
+    if let Ok(db_path) = std::env::var("MATCHY_DATABASE") {
+        eprintln!("matchy: loading database from MATCHY_DATABASE={}", db_path);
+        let path_c = std::ffi::CString::new(db_path.clone()).unwrap();
+        if matchy_load_database(path_c.as_ptr()) == 0 {
+            eprintln!("matchy: database loaded successfully");
+        } else {
+            eprintln!("matchy: failed to load database from {}", db_path);
+        }
+    }
+    
+    let handle = create_dissector_handle(
+        postdissector::dissect_matchy,
+        PROTO_MATCHY,
+    );
+    register_postdissector(handle);
+}
+
+// ============================================================================
+// Public API for database management
+// ============================================================================
+
+/// Load a matchy threat database
+#[no_mangle]
+pub extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
     if path.is_null() {
         return -1;
     }
-
+    
     let path_str = match unsafe { CStr::from_ptr(path).to_str() } {
         Ok(s) => s,
         Err(_) => return -1,
     };
-
+    
     match matchy::Database::from(path_str).open() {
         Ok(db) => {
-            if let Ok(mut threat_db) = THREAT_DB.lock() {
-                *threat_db = Some(Arc::new(db));
+            if let Ok(mut guard) = THREAT_DB.lock() {
+                *guard = Some(db);
                 0
             } else {
                 -1
             }
         }
-        Err(_) => -1,
+        Err(e) => {
+            eprintln!("matchy: failed to load database: {}", e);
+            -1
+        }
     }
 }
 
-/// Get current threat database status
-///
-/// # Returns
-///
-/// 1 if database loaded, 0 if not loaded
+/// Check if a database is loaded
 #[no_mangle]
-pub extern "C" fn matchy_wireshark_database_loaded() -> c_int {
+pub extern "C" fn matchy_database_loaded() -> c_int {
     match THREAT_DB.lock() {
-        Ok(db) => {
-            if db.is_some() {
-                1
-            } else {
-                0
-            }
-        }
+        Ok(guard) => if guard.is_some() { 1 } else { 0 },
         Err(_) => 0,
     }
 }
 
-/// Placeholder for plugin info structure
-/// This will be defined more completely in the Wireshark FFI bindings
-#[repr(C)]
-pub struct plugin_info_t {
-    version: *const c_char,
-    name: *const c_char,
-    description: *const c_char,
+/// Unload the current database
+#[no_mangle]
+pub extern "C" fn matchy_unload_database() {
+    if let Ok(mut guard) = THREAT_DB.lock() {
+        *guard = None;
+    }
+}
+
+// ============================================================================
+// Internal helpers
+// ============================================================================
+
+pub(crate) fn get_database() -> Option<std::sync::MutexGuard<'static, Option<matchy::Database>>> {
+    THREAT_DB.lock().ok()
+}
+
+pub(crate) fn get_proto_id() -> c_int {
+    unsafe { PROTO_MATCHY }
+}
+
+pub(crate) fn get_hf_ids() -> (c_int, c_int, c_int, c_int, c_int) {
+    unsafe {
+        (
+            HF_THREAT_DETECTED,
+            HF_THREAT_LEVEL,
+            HF_THREAT_CATEGORY,
+            HF_THREAT_SOURCE,
+            HF_THREAT_INDICATOR,
+        )
+    }
+}
+
+pub(crate) fn get_ett_matchy() -> c_int {
+    unsafe { ETT_MATCHY }
 }
 
 #[cfg(test)]
@@ -128,12 +346,6 @@ mod tests {
 
     #[test]
     fn test_plugin_version() {
-        assert!(!VERSION.is_empty());
-    }
-
-    #[test]
-    fn test_plugin_constants() {
-        assert_eq!(PLUGIN_NAME, "Matchy");
-        assert!(PLUGIN_DESCRIPTION.contains("threat intelligence"));
+        assert_eq!(plugin_version[5], 0);
     }
 }

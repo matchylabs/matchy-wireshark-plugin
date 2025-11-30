@@ -6,15 +6,31 @@ authors = ["MatchyLabs Contributors"]
 license = "Apache-2.0"
 description = "Wireshark plugin for real-time threat intelligence matching"
 repository = "https://github.com/matchylabs/matchy-wireshark"
+# Version of Wireshark this plugin was built against
+# Used by installer to check compatibility
+build = "build.rs"
 
 [lib]
 name = "matchy_wireshark"
 crate-type = ["cdylib"]
 
+[[bin]]
+name = "matchy-wireshark-install"
+path = "src/bin/install.rs"
+
 [dependencies]
 matchy = { git = "https://github.com/matchylabs/matchy", branch = "main" }
+matchy-data-format = { git = "https://github.com/matchylabs/matchy", branch = "main" }
 libc = "0.2"
 serde_json = "1.0"
+
+[target.'cfg(unix)'.dependencies]
+# For installer - running commands and terminal interaction
+dialoguer = { version = "0.11", optional = true }
+
+[features]
+default = []
+installer = ["dialoguer"]
 
 [profile.release]
 opt-level = 3

@@ -2,7 +2,7 @@
 //!
 //! Handles IP/domain lookups and visual threat indicators.
 
-use serde_json::json;
+use serde_json::{json, Value};
 
 /// Threat level representation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +101,7 @@ impl ThreatData {
 }
 
 /// Lookup indicator in threat database
-pub fn lookup_threat(indicator: &str) -> Option<ThreatData> {
+pub fn lookup_threat(_indicator: &str) -> Option<ThreatData> {
     // TODO: Call matchy database lookup
     // Examples:
     // - IP: "1.2.3.4"

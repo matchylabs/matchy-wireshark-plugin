@@ -25,7 +25,7 @@ pub fn register_display_filters() {
 /// # Returns
 ///
 /// true if packet matches filter, false otherwise
-pub fn matches_filter(filter_expr: &str, threat_data: &serde_json::Value) -> bool {
+pub fn matches_filter(_filter_expr: &str, _threat_data: &serde_json::Value) -> bool {
     // TODO: Parse and evaluate filter expressions
     // Examples:
     // - "matchy.threat_detected" -> check if threat_data is non-null

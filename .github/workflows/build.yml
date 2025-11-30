@@ -1,0 +1,263 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14        # ARM64 runner
+            arch: arm64
+            target: aarch64-apple-darwin
+          - os: macos-13        # x86_64 runner  
+            arch: x86_64
+            target: x86_64-apple-darwin
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+      
+      - name: Install Wireshark (for headers and libs)
+        run: |
+          brew install wireshark
+          
+      - name: Build
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          
+      - name: Fix library paths
+        run: |
+          PLUGIN="target/${{ matrix.target }}/release/libmatchy_wireshark.dylib"
+          
+          # Change absolute paths to @rpath
+          install_name_tool -id matchy.so "$PLUGIN"
+          
+          for lib in libwireshark libwsutil libglib-2.0; do
+            old_path=$(otool -L "$PLUGIN" | grep "$lib" | awk '{print $1}' | head -1)
+            if [[ -n "$old_path" && "$old_path" != @rpath/* ]]; then
+              lib_name=$(basename "$old_path")
+              install_name_tool -change "$old_path" "@rpath/$lib_name" "$PLUGIN" || true
+            fi
+          done
+          
+          # Verify
+          otool -L "$PLUGIN"
+          
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/libmatchy_wireshark.dylib dist/matchy.so
+          cp install.sh dist/
+          cp README.md dist/
+          
+          # Create platform-specific install script
+          cat > dist/install.sh << 'INSTALL_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Matchy Wireshark Plugin Installer (macOS ${{ matrix.arch }})"
+          echo "============================================="
+          
+          # Detect Wireshark version
+          if command -v tshark &> /dev/null; then
+              WS_VERSION=$(tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
+          elif [ -x "/Applications/Wireshark.app/Contents/MacOS/tshark" ]; then
+              WS_VERSION=$(/Applications/Wireshark.app/Contents/MacOS/tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
+          else
+              echo "Error: Wireshark not found"
+              exit 1
+          fi
+          
+          echo "Detected Wireshark version: ${WS_VERSION//-/.}"
+          
+          PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
+          mkdir -p "$PLUGIN_DIR"
+          
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          cp "$SCRIPT_DIR/matchy.so" "$PLUGIN_DIR/"
+          
+          echo "Installed to: $PLUGIN_DIR/matchy.so"
+          echo ""
+          echo "Usage:"
+          echo "  MATCHY_DATABASE=/path/to/threats.mxy wireshark capture.pcap"
+          INSTALL_EOF
+          chmod +x dist/install.sh
+          
+          cd dist
+          tar -czvf ../matchy-wireshark-macos-${{ matrix.arch }}.tar.gz *
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: matchy-wireshark-macos-${{ matrix.arch }}
+          path: matchy-wireshark-macos-${{ matrix.arch }}.tar.gz
+
+  build-linux:
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            wireshark-dev \
+            libwireshark-dev \
+            libglib2.0-dev \
+            pkg-config
+            
+      - name: Build
+        run: cargo build --release
+        
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/release/libmatchy_wireshark.so dist/matchy.so
+          cp README.md dist/
+          
+          # Create install script
+          cat > dist/install.sh << 'INSTALL_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "Matchy Wireshark Plugin Installer (Linux x86_64)"
+          echo "================================================"
+          
+          # Detect Wireshark version
+          if command -v tshark &> /dev/null; then
+              WS_VERSION=$(tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
+          else
+              echo "Error: Wireshark/tshark not found in PATH"
+              exit 1
+          fi
+          
+          echo "Detected Wireshark version: ${WS_VERSION//-/.}"
+          
+          PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
+          mkdir -p "$PLUGIN_DIR"
+          
+          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          cp "$SCRIPT_DIR/matchy.so" "$PLUGIN_DIR/"
+          
+          echo "Installed to: $PLUGIN_DIR/matchy.so"
+          echo ""
+          echo "Usage:"
+          echo "  MATCHY_DATABASE=/path/to/threats.mxy wireshark capture.pcap"
+          INSTALL_EOF
+          chmod +x dist/install.sh
+          
+          cd dist
+          tar -czvf ../matchy-wireshark-linux-x86_64.tar.gz *
+          
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: matchy-wireshark-linux-x86_64
+          path: matchy-wireshark-linux-x86_64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+      
+      - name: Install Wireshark
+        run: |
+          # Download and install Wireshark (includes development headers)
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "https://2.na.dl.wireshark.org/win64/Wireshark-4.4.2-x64.exe" -OutFile "wireshark-installer.exe"
+          Start-Process -FilePath "wireshark-installer.exe" -Args "/S /D=C:\Wireshark" -Wait
+        shell: pwsh
+        
+      - name: Set up build environment
+        run: |
+          echo "WIRESHARK_DIR=C:\Wireshark" >> $env:GITHUB_ENV
+          echo "C:\Wireshark" >> $env:GITHUB_PATH
+        shell: pwsh
+        
+      - name: Build
+        run: cargo build --release
+        env:
+          WIRESHARK_DIR: C:\Wireshark
+          
+      - name: Package
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item target\release\matchy_wireshark.dll dist\matchy.dll
+          Copy-Item README.md dist\
+          
+          # Create install script
+          @'
+          @echo off
+          echo Matchy Wireshark Plugin Installer (Windows x64)
+          echo ================================================
+          
+          set "PLUGIN_DIR=%APPDATA%\Wireshark\plugins\4-6\epan"
+          if not exist "%PLUGIN_DIR%" mkdir "%PLUGIN_DIR%"
+          
+          copy /Y "%~dp0matchy.dll" "%PLUGIN_DIR%\"
+          
+          echo Installed to: %PLUGIN_DIR%\matchy.dll
+          echo.
+          echo Usage:
+          echo   set MATCHY_DATABASE=C:\path\to\threats.mxy
+          echo   wireshark capture.pcap
+          pause
+          '@ | Out-File -FilePath dist\install.bat -Encoding ASCII
+          
+          Compress-Archive -Path dist\* -DestinationPath matchy-wireshark-windows-x64.zip
+        shell: pwsh
+        
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: matchy-wireshark-windows-x64
+          path: matchy-wireshark-windows-x64.zip
+
+  release:
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/matchy-wireshark-macos-arm64/matchy-wireshark-macos-arm64.tar.gz
+            artifacts/matchy-wireshark-macos-x86_64/matchy-wireshark-macos-x86_64.tar.gz
+            artifacts/matchy-wireshark-linux-x86_64/matchy-wireshark-linux-x86_64.tar.gz
+            artifacts/matchy-wireshark-windows-x64/matchy-wireshark-windows-x64.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
