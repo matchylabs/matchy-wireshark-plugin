@@ -174,94 +174,97 @@ jobs:
           name: matchy-wireshark-linux-x86_64
           path: matchy-wireshark-linux-x86_64.tar.gz
 
-  build-windows:
-    runs-on: windows-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Install Wireshark
-        run: |
-          # Install Wireshark using Chocolatey (pre-installed on GitHub Actions)
-          choco install wireshark --yes --no-progress
-
-          # Find where Wireshark was installed
-          $wiresharkPath = (Get-Command tshark -ErrorAction SilentlyContinue).Source
-          if ($wiresharkPath) {
-            $wiresharkDir = Split-Path -Parent (Split-Path -Parent $wiresharkPath)
-            Write-Host "Found Wireshark at: $wiresharkDir"
-            echo "WIRESHARK_DIR=$wiresharkDir" >> $env:GITHUB_ENV
-          } else {
-            # Fallback to common install locations
-            $possiblePaths = @(
-              "C:\Program Files\Wireshark",
-              "C:\Program Files (x86)\Wireshark"
-            )
-            foreach ($path in $possiblePaths) {
-              if (Test-Path $path) {
-                Write-Host "Found Wireshark at: $path"
-                echo "WIRESHARK_DIR=$path" >> $env:GITHUB_ENV
-                break
-              }
-            }
-          }
-        shell: pwsh
-        
-      - name: Verify Wireshark installation
-        run: |
-          Write-Host "WIRESHARK_DIR: $env:WIRESHARK_DIR"
-          if (Test-Path "$env:WIRESHARK_DIR") {
-            Write-Host "Wireshark directory exists"
-            Get-ChildItem "$env:WIRESHARK_DIR" | Select-Object -First 10
-          } else {
-            Write-Error "Wireshark directory not found!"
-          }
-        shell: pwsh
-        
-      - name: Build
-        run: |
-          echo "Building with WIRESHARK_DIR: $env:WIRESHARK_DIR"
-          cargo build --release
-          
-      - name: Package
-        run: |
-          New-Item -ItemType Directory -Force -Path dist
-          Copy-Item target\release\matchy_wireshark.dll dist\matchy.dll
-          Copy-Item README.md dist\
-          
-          # Create install script
-          @'
-          @echo off
-          echo Matchy Wireshark Plugin Installer (Windows x64)
-          echo ================================================
-          
-          set "PLUGIN_DIR=%APPDATA%\Wireshark\plugins\4-6\epan"
-          if not exist "%PLUGIN_DIR%" mkdir "%PLUGIN_DIR%"
-          
-          copy /Y "%~dp0matchy.dll" "%PLUGIN_DIR%\"
-          
-          echo Installed to: %PLUGIN_DIR%\matchy.dll
-          echo.
-          echo Usage:
-          echo   set MATCHY_DATABASE=C:\path\to\threats.mxy
-          echo   wireshark capture.pcap
-          pause
-          '@ | Out-File -FilePath dist\install.bat -Encoding ASCII
-          
-          Compress-Archive -Path dist\* -DestinationPath matchy-wireshark-windows-x64.zip
-        shell: pwsh
-        
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: matchy-wireshark-windows-x64
-          path: matchy-wireshark-windows-x64.zip
+  # Windows builds are currently disabled due to missing Wireshark development libraries
+  # Wireshark doesn't ship .lib files needed for linking in their Windows installers
+  # To enable: Need to compile Wireshark from source or find pre-built dev packages
+  # build-windows:
+  #   runs-on: windows-latest
+  #
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install Rust
+  #       uses: dtolnay/rust-toolchain@stable
+  #
+  #     - name: Install Wireshark
+  #       run: |
+  #         # Install Wireshark using Chocolatey (pre-installed on GitHub Actions)
+  #         choco install wireshark --yes --no-progress
+  #
+  #         # Find where Wireshark was installed
+  #         $wiresharkPath = (Get-Command tshark -ErrorAction SilentlyContinue).Source
+  #         if ($wiresharkPath) {
+  #           $wiresharkDir = Split-Path -Parent (Split-Path -Parent $wiresharkPath)
+  #           Write-Host "Found Wireshark at: $wiresharkDir"
+  #           echo "WIRESHARK_DIR=$wiresharkDir" >> $env:GITHUB_ENV
+  #         } else {
+  #           # Fallback to common install locations
+  #           $possiblePaths = @(
+  #             "C:\Program Files\Wireshark",
+  #             "C:\Program Files (x86)\Wireshark"
+  #           )
+  #           foreach ($path in $possiblePaths) {
+  #             if (Test-Path $path) {
+  #               Write-Host "Found Wireshark at: $path"
+  #               echo "WIRESHARK_DIR=$path" >> $env:GITHUB_ENV
+  #               break
+  #             }
+  #           }
+  #         }
+  #       shell: pwsh
+  #
+  #     - name: Verify Wireshark installation
+  #       run: |
+  #         Write-Host "WIRESHARK_DIR: $env:WIRESHARK_DIR"
+  #         if (Test-Path "$env:WIRESHARK_DIR") {
+  #           Write-Host "Wireshark directory exists"
+  #           Get-ChildItem "$env:WIRESHARK_DIR" | Select-Object -First 10
+  #         } else {
+  #           Write-Error "Wireshark directory not found!"
+  #         }
+  #       shell: pwsh
+  #
+  #     - name: Build
+  #       run: |
+  #         echo "Building with WIRESHARK_DIR: $env:WIRESHARK_DIR"
+  #         cargo build --release
+  #
+  #     - name: Package
+  #       run: |
+  #         New-Item -ItemType Directory -Force -Path dist
+  #         Copy-Item target\release\matchy_wireshark.dll dist\matchy.dll
+  #         Copy-Item README.md dist\
+  #
+  #         # Create install script
+  #         @'
+  #         @echo off
+  #         echo Matchy Wireshark Plugin Installer (Windows x64)
+  #         echo ================================================
+  #
+  #         set "PLUGIN_DIR=%APPDATA%\Wireshark\plugins\4-6\epan"
+  #         if not exist "%PLUGIN_DIR%" mkdir "%PLUGIN_DIR%"
+  #
+  #         copy /Y "%~dp0matchy.dll" "%PLUGIN_DIR%\"
+  #
+  #         echo Installed to: %PLUGIN_DIR%\matchy.dll
+  #         echo.
+  #         echo Usage:
+  #         echo   set MATCHY_DATABASE=C:\path\to\threats.mxy
+  #         echo   wireshark capture.pcap
+  #         pause
+  #         '@ | Out-File -FilePath dist\install.bat -Encoding ASCII
+  #
+  #         Compress-Archive -Path dist\* -DestinationPath matchy-wireshark-windows-x64.zip
+  #       shell: pwsh
+  #
+  #     - name: Upload artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: matchy-wireshark-windows-x64
+  #         path: matchy-wireshark-windows-x64.zip
 
   release:
-    needs: [build-macos, build-linux, build-windows]
+    needs: [build-macos, build-linux]  # Windows builds disabled - see above
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     
@@ -281,7 +284,6 @@ jobs:
             artifacts/matchy-wireshark-macos-arm64/matchy-wireshark-macos-arm64.tar.gz
             artifacts/matchy-wireshark-macos-x86_64/matchy-wireshark-macos-x86_64.tar.gz
             artifacts/matchy-wireshark-linux-x86_64/matchy-wireshark-linux-x86_64.tar.gz
-            artifacts/matchy-wireshark-windows-x64/matchy-wireshark-windows-x64.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

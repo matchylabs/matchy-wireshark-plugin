@@ -18,6 +18,8 @@ Real-time threat intelligence matching for Wireshark packet analysis.
 - Rust 1.70+
 - libwireshark development headers
 
+> **Note:** Windows builds are currently not supported due to Wireshark not shipping development libraries (.lib files) with their Windows installers. Windows support requires building Wireshark from source.
+
 ### Build
 
 ```bash
