@@ -2,7 +2,6 @@
 //!
 //! Handles IP/domain lookups and visual threat indicators.
 
-
 /// Threat level representation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreatLevel {
@@ -88,7 +87,6 @@ impl ThreatData {
             metadata: data.clone(),
         })
     }
-
 }
 
 #[cfg(test)]

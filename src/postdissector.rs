@@ -89,13 +89,10 @@ fn lookup_ip(db: &matchy::Database, ip: &IpAddr) -> Option<ThreatData> {
     match db.lookup_ip(*ip) {
         Ok(Some(result)) => {
             // Convert QueryResult to ThreatData
-            match result {
-                matchy::QueryResult::Ip { data, .. } => {
-                    // Convert DataValue to JSON for our ThreatData parser
-                    let json = data_value_to_json(&data);
-                    return ThreatData::from_json(&json);
-                }
-                _ => {}
+            if let matchy::QueryResult::Ip { data, .. } = result {
+                // Convert DataValue to JSON for our ThreatData parser
+                let json = data_value_to_json(&data);
+                return ThreatData::from_json(&json);
             }
         }
         Ok(None) => {}

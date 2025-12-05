@@ -63,7 +63,12 @@ static mut ETT_MATCHY: c_int = -1;
 #[no_mangle]
 #[used]
 pub static plugin_version: [c_char; 6] = [
-    b'0' as c_char, b'.' as c_char, b'1' as c_char, b'.' as c_char, b'0' as c_char, 0,
+    b'0' as c_char,
+    b'.' as c_char,
+    b'1' as c_char,
+    b'.' as c_char,
+    b'0' as c_char,
+    0,
 ];
 
 /// Major version of Wireshark this plugin is built for
@@ -148,14 +153,13 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
         hf_register_info {
             p_id: std::ptr::null_mut(), // Will be set at runtime
             hfinfo: header_field_info {
-                name: b"Threat Detected\0".as_ptr() as *const c_char,
-                abbrev: b"matchy.threat_detected\0".as_ptr() as *const c_char,
+                name: c"Threat Detected".as_ptr(),
+                abbrev: c"matchy.threat_detected".as_ptr(),
                 type_: FT_BOOLEAN,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
-                blurb: b"Whether this packet matches a threat indicator\0".as_ptr()
-                    as *const c_char,
+                blurb: c"Whether this packet matches a threat indicator".as_ptr(),
                 id: -1,
                 parent: 0,
                 ref_type: 0,
@@ -166,13 +170,13 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
         hf_register_info {
             p_id: std::ptr::null_mut(),
             hfinfo: header_field_info {
-                name: b"Threat Level\0".as_ptr() as *const c_char,
-                abbrev: b"matchy.level\0".as_ptr() as *const c_char,
+                name: c"Threat Level".as_ptr(),
+                abbrev: c"matchy.level".as_ptr(),
                 type_: FT_STRINGZ,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
-                blurb: b"Severity level of the threat\0".as_ptr() as *const c_char,
+                blurb: c"Severity level of the threat".as_ptr(),
                 id: -1,
                 parent: 0,
                 ref_type: 0,
@@ -183,13 +187,13 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
         hf_register_info {
             p_id: std::ptr::null_mut(),
             hfinfo: header_field_info {
-                name: b"Category\0".as_ptr() as *const c_char,
-                abbrev: b"matchy.category\0".as_ptr() as *const c_char,
+                name: c"Category".as_ptr(),
+                abbrev: c"matchy.category".as_ptr(),
                 type_: FT_STRINGZ,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
-                blurb: b"Type of threat (malware, phishing, c2, etc.)\0".as_ptr() as *const c_char,
+                blurb: c"Type of threat (malware, phishing, c2, etc.)".as_ptr(),
                 id: -1,
                 parent: 0,
                 ref_type: 0,
@@ -200,13 +204,13 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
         hf_register_info {
             p_id: std::ptr::null_mut(),
             hfinfo: header_field_info {
-                name: b"Source\0".as_ptr() as *const c_char,
-                abbrev: b"matchy.source\0".as_ptr() as *const c_char,
+                name: c"Source".as_ptr(),
+                abbrev: c"matchy.source".as_ptr(),
                 type_: FT_STRINGZ,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
-                blurb: b"Threat intelligence feed source\0".as_ptr() as *const c_char,
+                blurb: c"Threat intelligence feed source".as_ptr(),
                 id: -1,
                 parent: 0,
                 ref_type: 0,
@@ -217,13 +221,13 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
         hf_register_info {
             p_id: std::ptr::null_mut(),
             hfinfo: header_field_info {
-                name: b"Indicator\0".as_ptr() as *const c_char,
-                abbrev: b"matchy.indicator\0".as_ptr() as *const c_char,
+                name: c"Indicator".as_ptr(),
+                abbrev: c"matchy.indicator".as_ptr(),
                 type_: FT_STRINGZ,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
-                blurb: b"The matched threat indicator\0".as_ptr() as *const c_char,
+                blurb: c"The matched threat indicator".as_ptr(),
                 id: -1,
                 parent: 0,
                 ref_type: 0,
@@ -338,13 +342,16 @@ unsafe extern "C" fn proto_reg_handoff_matchy() {
 // ============================================================================
 
 /// Load a matchy threat database
+///
+/// # Safety
+/// Caller must ensure `path` is a valid null-terminated C string.
 #[no_mangle]
-pub extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
+pub unsafe extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
     if path.is_null() {
         return -1;
     }
 
-    let path_str = match unsafe { CStr::from_ptr(path).to_str() } {
+    let path_str = match CStr::from_ptr(path).to_str() {
         Ok(s) => s,
         Err(_) => return -1,
     };

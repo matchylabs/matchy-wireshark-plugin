@@ -330,12 +330,8 @@ pub unsafe fn address_to_ipv6(addr: *const address) -> Option<[u8; 16]> {
     if addr_ref.type_ != AT_IPV6 || addr_ref.len != 16 || addr_ref.data.is_null() {
         return None;
     }
-    let mut result = [0u8; 16];
-    let data = addr_ref.data as *const u8;
-    for i in 0..16 {
-        result[i] = *data.add(i);
-    }
-    Some(result)
+    let data = addr_ref.data as *const [u8; 16];
+    Some(*data)
 }
 
 // ============================================================================
