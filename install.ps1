@@ -1,4 +1,4 @@
-# Install matchy-wireshark plugin for Windows
+# Install matchy-wireshark-plugin for Windows
 #
 # This script installs the matchy Wireshark plugin to the user's plugin directory.
 # Run with: .\install.ps1

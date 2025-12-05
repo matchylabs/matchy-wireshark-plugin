@@ -4,7 +4,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Project Overview
 
-matchy-wireshark is a Wireshark plugin written in Rust that provides real-time threat intelligence matching for packet analysis. The plugin acts as a postdissector, processing packets after normal Wireshark dissection to match IPs and domains against threat databases.
+matchy-wireshark-plugin is a Wireshark plugin written in Rust that provides real-time threat intelligence matching for packet analysis. The plugin acts as a postdissector, processing packets after normal Wireshark dissection to match IPs and domains against threat databases.
 
 ## Build and Development Commands
 

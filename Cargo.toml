@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["MatchyLabs Contributors"]
 license = "Apache-2.0"
 description = "Wireshark plugin for real-time threat intelligence matching"
-repository = "https://github.com/matchylabs/matchy-wireshark"
+repository = "https://github.com/matchylabs/matchy-wireshark-plugin"
 # Version of Wireshark this plugin was built against
 # Used by installer to check compatibility
 build = "build.rs"

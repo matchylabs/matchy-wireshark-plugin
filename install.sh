@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install matchy-wireshark plugin
+# Install matchy-wireshark-plugin
 #
 # This script installs the matchy Wireshark plugin to the user's plugin directory.
 # It supports both macOS and Linux systems.
@@ -220,7 +220,7 @@ main() {
             echo "  You have Wireshark $installed_version installed"
             echo
             echo "Please upgrade Wireshark or download an older plugin version from:"
-            echo "  https://github.com/matchylabs/matchy-wireshark/releases"
+            echo "  https://github.com/matchylabs/matchy-wireshark-plugin/releases"
             exit 1
         fi
         info "Detected Wireshark $installed_version (requires $min_version+)"

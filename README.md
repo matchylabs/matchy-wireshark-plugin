@@ -64,8 +64,8 @@ cp target/release/libmatchy_wireshark.so "$PLUGIN_DIR/matchy.so"
 **Option 3: From pre-built release**:
 ```bash
 # Download from GitHub releases page
-tar -xzf matchy-wireshark-*.tar.gz
-cd matchy-wireshark-*/
+tar -xzf matchy-wireshark-plugin-*.tar.gz
+cd matchy-wireshark-plugin-*/
 ./install.sh
 ```
 
@@ -160,7 +160,7 @@ The plugin operates as a Wireshark postdissector, processing packets after stand
 └─────────────┬───────────────────┘
               │ FFI boundary
 ┌─────────────▼───────────────────┐
-│  matchy-wireshark (Rust)        │
+│  matchy-wireshark-plugin (Rust) │
 │  ├─ Extract IPs & domains       │
 │  ├─ Query threat database       │
 │  ├─ Add custom packet fields    │
