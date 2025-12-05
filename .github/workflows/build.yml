@@ -224,7 +224,7 @@ jobs:
           # Copy the built DLL
           Copy-Item "target/${{ matrix.target }}/release/matchy_wireshark_plugin.dll" -Destination "dist/$PKG_NAME/matchy.dll"
           Copy-Item "README.md" -Destination "dist/$PKG_NAME/"
-          Copy-Item "install.ps1" -Destination "dist/$PKG_NAME/"
+          Copy-Item "install.bat" -Destination "dist/$PKG_NAME/"
           
           # Record minimum version
           $WS_VERSION | Out-File -FilePath "dist/$PKG_NAME/MIN_WIRESHARK_VERSION" -Encoding ASCII -NoNewline

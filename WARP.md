@@ -54,9 +54,9 @@ Use the provided installer scripts which handle version detection and path setup
 ./install.sh
 ```
 
-**Windows (PowerShell):**
-```powershell
-.\install.ps1
+**Windows:**
+```cmd
+install.bat
 ```
 
 The installers automatically detect your Wireshark version and install to the correct plugin directory.
