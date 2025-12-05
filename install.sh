@@ -35,50 +35,50 @@ extract_version() {
     echo "$1" | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | head -1
 }
 
-# Detect Wireshark version from config file (works for portable too)
+# Detect Wireshark version from config file
 detect_version_from_config() {
-    recent_file="$HOME/.config/wireshark/recent"
-    
-    if [ -f "$recent_file" ]; then
-        version=$(head -1 "$recent_file" | sed -E 's/.*Wireshark ([0-9]+\.[0-9]+)\..*/\1/')
-        if [ -n "$version" ]; then
-            echo "$version"
+    # Check both possible config locations
+    for recent_file in "$HOME/.config/wireshark/recent" "$HOME/.wireshark/recent"; do
+        if [ -f "$recent_file" ]; then
+            version=$(head -1 "$recent_file" | sed -E 's/.*Wireshark ([0-9]+\.[0-9]+)\..*/\1/')
+            if [ -n "$version" ] && echo "$version" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                echo "$version"
+                return
+            fi
         fi
-    fi
+    done
 }
 
-# Detect Wireshark version
-detect_wireshark_version() {
-    if [ "$OS_TYPE" = "darwin" ]; then
-        # Check Wireshark.app first
-        if [ -d "/Applications/Wireshark.app" ]; then
-            version=$(/Applications/Wireshark.app/Contents/MacOS/Wireshark --version 2>/dev/null | head -1)
+# Detect Wireshark version from binary
+detect_version_from_binary() {
+    # Try wireshark, then tshark
+    for bin in wireshark tshark; do
+        if command -v "$bin" >/dev/null 2>&1; then
+            version=$("$bin" --version 2>/dev/null | head -1)
             extract_version "$version"
             return
         fi
-        # Homebrew (ARM)
-        if [ -x "/opt/homebrew/bin/tshark" ]; then
-            version=$(/opt/homebrew/bin/tshark --version 2>/dev/null | head -1)
-            extract_version "$version"
-            return
-        fi
-        # Homebrew (Intel)
-        if [ -x "/usr/local/bin/tshark" ]; then
-            version=$(/usr/local/bin/tshark --version 2>/dev/null | head -1)
-            extract_version "$version"
-            return
-        fi
-    fi
+    done
     
-    # Linux or fallback
-    if command -v tshark >/dev/null 2>&1; then
-        version=$(tshark --version 2>/dev/null | head -1)
+    # macOS: check Wireshark.app
+    if [ "$OS_TYPE" = "darwin" ] && [ -d "/Applications/Wireshark.app" ]; then
+        version=$(/Applications/Wireshark.app/Contents/MacOS/Wireshark --version 2>/dev/null | head -1)
         extract_version "$version"
         return
     fi
+}
+
+# Detect Wireshark version - prefer config file, fall back to binary
+detect_wireshark_version() {
+    # Config file is most reliable (works even if binary not in PATH)
+    version=$(detect_version_from_config)
+    if [ -n "$version" ]; then
+        echo "$version"
+        return
+    fi
     
-    # Fallback: check config file (works for portable Wireshark)
-    detect_version_from_config
+    # Fall back to binary detection
+    detect_version_from_binary
 }
 
 # Get the minimum Wireshark version required (binary packages only)
@@ -254,4 +254,24 @@ main() {
     echo
 }
 
+# Pause if running interactively (e.g., double-clicked from file manager)
+# This keeps the terminal window open so the user can read the output
+pause_if_interactive() {
+    # Only pause if stdin is a terminal and we're not being piped
+    if [ -t 0 ] && [ -t 1 ]; then
+        # Check if we're likely launched from a GUI (no parent shell)
+        # ppid=1 or parent is a GUI app typically means double-clicked
+        case "$(ps -o comm= -p $PPID 2>/dev/null)" in
+            # Common terminal emulators - don't pause
+            bash|zsh|sh|dash|fish|ksh|tcsh|csh) ;;
+            # Everything else (Finder, Nautilus, etc.) - pause
+            *)
+                printf "Press Enter to close..."
+                read -r _
+                ;;
+        esac
+    fi
+}
+
 main "$@"
+pause_if_interactive
