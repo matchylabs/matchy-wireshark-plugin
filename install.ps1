@@ -13,9 +13,18 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Colors
-function Write-Success { param($msg) Write-Host $msg -ForegroundColor Green }
-function Write-Err { param($msg) Write-Host $msg -ForegroundColor Red }
-function Write-Info { param($msg) Write-Host $msg -ForegroundColor Cyan }
+function Write-Success {
+    param([string]$msg)
+    Write-Host $msg -ForegroundColor Green
+}
+function Write-Err {
+    param([string]$msg)
+    Write-Host $msg -ForegroundColor Red
+}
+function Write-Info {
+    param([string]$msg)
+    Write-Host $msg -ForegroundColor Cyan
+}
 
 function Show-Usage {
     Write-Host "Matchy Wireshark Plugin Installer"
@@ -29,10 +38,35 @@ function Show-Usage {
     Write-Host "If -Version is not specified, uses WIRESHARK_VERSION from package."
 }
 
+function Get-VersionFromConfig {
+    # Try to detect version from Wireshark config file
+    # Works for both installed and portable versions
+    $recentFile = Join-Path $env:APPDATA "Wireshark\recent"
+    
+    if (Test-Path $recentFile) {
+        try {
+            $firstLine = Get-Content $recentFile -First 1
+            if ($firstLine -match 'Wireshark (\d+\.\d+)') {
+                return $matches[1]
+            }
+        } catch {
+            # Silently ignore errors when probing for Wireshark
+        }
+    }
+    
+    return $null
+}
+
 function Find-WiresharkVersion {
     # Try to find Wireshark installations (best-effort, not required)
     # Returns array of version strings found
     $foundVersions = @()
+    
+    # Check config file first (works for portable)
+    $configVer = Get-VersionFromConfig
+    if ($configVer) {
+        $foundVersions += $configVer
+    }
     
     # Check PATH for tshark
     $tshark = Get-Command tshark -ErrorAction SilentlyContinue
@@ -40,9 +74,14 @@ function Find-WiresharkVersion {
         try {
             $output = & tshark --version 2>&1 | Select-Object -First 1
             if ($output -match '(\d+\.\d+)') {
-                $foundVersions += $matches[1]
+                $ver = $matches[1]
+                if ($ver -notin $foundVersions) {
+                    $foundVersions += $ver
+                }
             }
-        } catch {}
+        } catch {
+            # Silently ignore errors when probing for tshark
+        }
     }
     
     # Check PATH for Wireshark.exe
@@ -56,7 +95,9 @@ function Find-WiresharkVersion {
                     $foundVersions += $ver
                 }
             }
-        } catch {}
+        } catch {
+            # Silently ignore errors when probing for Wireshark
+        }
     }
     
     return $foundVersions
@@ -196,3 +237,9 @@ Write-Host ""
 Write-Host "Or use environment variable:"
 Write-Host "  `$env:MATCHY_DATABASE = 'C:\path\to\threats.mxy'"
 Write-Host ""
+
+# Pause if run by double-clicking (not from a terminal)
+if ([Environment]::UserInteractive -and -not [Console]::IsOutputRedirected) {
+    Write-Host "Press any key to continue..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+}

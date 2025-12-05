@@ -35,6 +35,18 @@ extract_version() {
     echo "$1" | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | head -1
 }
 
+# Detect Wireshark version from config file (works for portable too)
+detect_version_from_config() {
+    recent_file="$HOME/.config/wireshark/recent"
+    
+    if [ -f "$recent_file" ]; then
+        version=$(head -1 "$recent_file" | sed -E 's/.*Wireshark ([0-9]+\.[0-9]+)\..*/\1/')
+        if [ -n "$version" ]; then
+            echo "$version"
+        fi
+    fi
+}
+
 # Detect Wireshark version
 detect_wireshark_version() {
     if [ "$OS_TYPE" = "darwin" ]; then
@@ -64,6 +76,9 @@ detect_wireshark_version() {
         extract_version "$version"
         return
     fi
+    
+    # Fallback: check config file (works for portable Wireshark)
+    detect_version_from_config
 }
 
 # Get the minimum Wireshark version required (binary packages only)
