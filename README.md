@@ -1,58 +1,69 @@
 # Matchy Wireshark Plugin
 
-Real-time threat intelligence matching for Wireshark packet analysis.
+A Wireshark plugin written in Rust that provides real-time threat intelligence matching during packet capture. Match IPs and domains against threat databases with sub-millisecond performance.
 
 ## Features
 
-- **Real-time threat enrichment**: Match source/destination IPs and domains against threat databases during packet capture
-- **Custom display filters**: Query threats using display filters like `matchy.threat_detected` and `matchy.level == "high"`
-- **Packet colorization**: Automatically color packets by threat level (red=critical, orange=high, yellow=medium)
-- **Zero-copy performance**: Sub-millisecond lookups on 100K+ indicators
-- **Local threat databases**: Use prebuilt .mxy threat feeds or create custom databases
+- **Real-time threat enrichment**: Matches source/destination IPs and domains against threat databases during packet capture
+- **Custom display filters**: Filter packets using expressions like `matchy.threat_detected` and `matchy.level == "critical"`
+- **Automatic packet colorization**: Color-codes packets by threat level (red=critical, orange=high, yellow=medium)
+- **High performance**: Sub-millisecond lookups on databases with 100K+ indicators using memory-mapped .mxy format
+- **Flexible databases**: Use prebuilt threat feeds or build custom databases from CSV/JSON sources
 
 ## Installation
 
 ### Requirements
 
-- Wireshark 4.0+ (macOS, Linux)
-- Rust 1.70+
-- libwireshark development headers
+- **Wireshark**: 4.0 or later (macOS, Linux)
+- **Rust**: 1.70 or later (for building from source)
+- **libwireshark**: Development headers (typically included with Wireshark on macOS/Linux)
 
-> **Note:** Windows builds are currently not supported due to Wireshark not shipping development libraries (.lib files) with their Windows installers. Windows support requires building Wireshark from source.
+> **Note:** Windows is not currently supported because Wireshark doesn't ship development libraries (.lib files) with Windows installers. Windows support would require building Wireshark from source.
 
-### Build
+### Build from Source
 
 ```bash
+# Build optimized release version
 cargo build --release
-# Plugin will be at: target/release/libmatchy_wireshark.so (Linux) or .dylib (macOS)
 
-# macOS only: Fix library paths for portability
+# Output locations:
+# - macOS: target/release/libmatchy_wireshark.dylib
+# - Linux: target/release/libmatchy_wireshark.so
+
+# macOS only: Fix dynamic library paths for portability
 ./fix-dylib-paths.sh target/release/libmatchy_wireshark.dylib
 ```
 
 ### Install
 
-**From source** (after building):
+**Option 1: Use the install script** (recommended):
 ```bash
-# Use the install script (handles version detection and paths)
+# After building, run the installer
 ./install.sh
 
-# Or install manually:
+# The script automatically:
+# - Detects your Wireshark version
+# - Finds the correct plugin directory
+# - Copies the plugin to the right location
+```
+
+**Option 2: Manual installation**:
+```bash
 # Detect Wireshark version
 WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
 PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
 mkdir -p "$PLUGIN_DIR"
 
-# macOS
+# Copy plugin (macOS)
 cp target/release/libmatchy_wireshark.dylib "$PLUGIN_DIR/matchy.so"
 
-# Linux  
+# Copy plugin (Linux)
 cp target/release/libmatchy_wireshark.so "$PLUGIN_DIR/matchy.so"
 ```
 
-**From pre-built release**:
+**Option 3: From pre-built release**:
 ```bash
-# Download from GitHub releases
+# Download from GitHub releases page
 tar -xzf matchy-wireshark-*.tar.gz
 cd matchy-wireshark-*/
 ./install.sh
@@ -60,141 +71,152 @@ cd matchy-wireshark-*/
 
 ## Usage
 
-### 1. Load a threat database
+### 1. Load a Threat Database
 
-In Wireshark, go to **Edit → Preferences → Protocols → Matchy**:
-1. Click the **Browse** button next to "Database Path"
-2. Select your `.mxy` threat intelligence database file
-3. Click **OK** to apply
-4. The database will load immediately (no restart required)
+Configure the plugin in Wireshark:
 
-The database path is saved in your Wireshark preferences and will be loaded automatically on startup.
+1. Open **Edit → Preferences → Protocols → Matchy**
+2. Click **Browse** next to "Database Path"
+3. Select your `.mxy` threat intelligence database file
+4. Click **OK**
 
-### 2. Use display filters
+The database loads immediately (no restart needed) and the path is saved for future sessions.
 
-Filter packets by threat intelligence:
+### 2. Filter Packets by Threat
+
+Use Wireshark display filters to find threats:
 
 ```
-# Show all threat matches
+# Show any packet with a threat match
 matchy.threat_detected
 
 # Filter by threat level
 matchy.level == "critical"
 matchy.level == "high"
 matchy.level == "medium"
+matchy.level == "low"
 
-# Filter by category
+# Filter by threat category
 matchy.category == "malware"
 matchy.category == "phishing"
 matchy.category == "c2"
+matchy.category == "botnet"
 
-# Combine with standard filters
-(matchy.threat_detected) && tcp.port == 443
+# Combine with standard Wireshark filters
+matchy.threat_detected && tcp.port == 443
 matchy.level == "critical" && ip.src == 1.2.3.4
+(matchy.category == "malware" || matchy.category == "c2") && http
 ```
 
-### 3. View threat details
+### 3. View Threat Details
 
-Click on a packet with threat matches to see:
-- Threat level
-- Category
-- Source (feed)
-- Custom metadata
+Select any packet with a threat match to view:
+- **Threat level**: Critical, High, Medium, Low
+- **Category**: Malware, phishing, C2, botnet, etc.
+- **Source**: Which threat feed flagged this indicator
+- **Metadata**: Additional context from the threat database
 
-## Building Threat Databases
+## Creating Threat Databases
 
-Convert CSV/JSONL threat feeds to .mxy format using the matchy CLI:
+Build `.mxy` databases from CSV or JSON threat feeds using the [matchy CLI](https://github.com/matchylabs/matchy):
 
 ```bash
-# Create from CSV (entry, threat_level, category, source)
+# From CSV format
 matchy build threats.csv -o threats.mxy --format csv
 
-# Create from JSONL
+# From JSON Lines format
 matchy build threats.jsonl -o threats.mxy --format jsonl
 ```
 
-Example CSV:
-```
+**Example CSV format**:
+```csv
 entry,threat_level,category,source
 1.2.3.4,high,malware,abuse.ch
+192.0.2.0/24,medium,scanner,shodan
 10.0.0.0/8,low,internal,rfc1918
 *.evil.com,critical,phishing,urlhaus
+example.net,medium,suspicious,custom
 ```
+
+The `.mxy` format uses memory-mapping for fast lookups with minimal memory overhead.
 
 ## Performance
 
-- **Lookup time**: <1ms per packet (100K indicator database)
-- **Memory usage**: <50MB per process
-- **Throughput**: No degradation to capture speed (sub-millisecond overhead)
+- **Lookup time**: Sub-millisecond per packet (tested with 100K+ indicator databases)
+- **Memory footprint**: <50MB per Wireshark instance - depending on database size
+- **Capture overhead**: Negligible impact on packet capture throughput
+- **Database format**: Memory-mapped .mxy files for zero-copy performance
 
-## Architecture
+## Architecture Overview
+
+The plugin operates as a Wireshark postdissector, processing packets after standard protocol dissection:
 
 ```
-┌──────────────────────┐
-│  Wireshark (C API)   │
-└──────────┬───────────┘
-           │
-┌──────────▼───────────────────────┐
-│  matchy-wireshark (Rust FFI)      │
-│  ├─ Wireshark postdissector       │
-│  ├─ IP/domain extraction          │
-│  ├─ Threat lookup (matchy API)    │
-│  └─ Display filter expressions    │
-└──────────┬───────────────────────┘
-           │
-┌──────────▼───────────────────────┐
-│  matchy (Rust library)            │
-│  ├─ .mxy database loading         │
-│  ├─ IP trie (CIDR matching)       │
-│  ├─ Glob patterns (domain matches)│
-│  └─ Sub-ms lookups                │
-└──────────────────────────────────┘
+┌─────────────────────────────────┐
+│     Wireshark (C/C++)           │
+│     ├─ Packet capture           │
+│     ├─ Protocol dissectors      │
+│     └─ Postdissector chain      │
+└─────────────┬───────────────────┘
+              │ FFI boundary
+┌─────────────▼───────────────────┐
+│  matchy-wireshark (Rust)        │
+│  ├─ Extract IPs & domains       │
+│  ├─ Query threat database       │
+│  ├─ Add custom packet fields    │
+│  ├─ Apply threat colorization   │
+│  └─ Register display filters    │
+└─────────────┬───────────────────┘
+              │
+┌─────────────▼───────────────────┐
+│  matchy-core (Rust)             │
+│  ├─ Memory-mapped .mxy files    │
+│  ├─ IP prefix trie (CIDR)       │
+│  ├─ Glob pattern matching       │
+│  └─ Sub-millisecond lookups     │
+└─────────────────────────────────┘
 ```
+
+**Key components**:
+- **Postdissector**: Runs after normal packet dissection, extracts IPs/domains
+- **FFI layer**: Safe Rust-to-C bridge for Wireshark integration
+- **Threat matching**: Fast lookups against memory-mapped threat database
+- **Display filters**: Custom filter expressions for threat-based packet filtering
 
 ## Development
 
-### Project structure
 
-```
-matchy-wireshark/
-├── src/
-│   ├── lib.rs              # Plugin entry point, FFI
-│   ├── postdissector.rs    # Wireshark postdissector logic
-│   ├── display_filter.rs   # Display filter expressions
-│   └── threats.rs          # Threat matching + coloring
-├── include/
-│   └── wireshark/          # Wireshark C API headers
-├── Cargo.toml
-└── README.md
-```
-
-### Testing
+### Testing and Development
 
 ```bash
-# Unit tests
+# Run unit tests
 cargo test
 
-# Build release
+# Run tests with output
+cargo test -- --nocapture
+
+# Build for development
+cargo build
+
+# Build optimized release
 cargo build --release
 
-# Check for issues
+# Check code quality
 cargo clippy -- -D warnings
+
+# Format code
+cargo fmt
 ```
 
-### Running locally
+### Local Testing
 
-Copy the compiled plugin to your Wireshark plugins directory, restart Wireshark, and load a threat database via preferences.
+1. Build the plugin: `cargo build --release`
+2. Install to Wireshark: `./install.sh`
+3. Restart Wireshark (if already running)
+4. Load a test `.mxy` database in preferences
+5. Capture traffic and verify threat matching works
+
 
 ## License
 
-Apache-2.0
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) in the main MatchyLabs repository.
-
-## Resources
-
-- [Matchy Documentation](https://matchylabs.github.io/matchy/)
-- [Wireshark Plugin Development](https://www.wireshark.org/docs/wsdg_html_chunked/lua_module_gui.html)
-- [Threat Feed Formats](../matchy/docs/FORMATS.md)
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
