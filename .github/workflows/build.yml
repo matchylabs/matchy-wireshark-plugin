@@ -30,18 +30,34 @@ jobs:
             arch: aarch64
             target: aarch64-unknown-linux-gnu
             lib_ext: so
+          - os: namespace-profile-windows-amd64
+            platform: windows
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+            lib_ext: dll
     
     runs-on: ${{ matrix.os }}
     
     steps:
-      - uses: namespacelabs/nscloud-checkout-action@v8
+      - name: Checkout (Linux/macOS)
+        if: matrix.platform != 'windows'
+        uses: namespacelabs/nscloud-checkout-action@v8
+      
+      - name: Checkout (Windows)
+        if: matrix.platform == 'windows'
+        uses: actions/checkout@v4
       
       - name: Set up cache
+        if: matrix.platform != 'windows'
         uses: namespacelabs/nscloud-cache-action@v1
         with:
           cache: |
             rust
             ${{ matrix.platform == 'linux' && 'apt' || 'brew' }}
+      
+      - name: Set up Visual Studio environment (Windows)
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -63,6 +79,75 @@ jobs:
             libwireshark-dev \
             libglib2.0-dev \
             pkg-config
+
+      - name: Install Wireshark and generate import libraries (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          # Install Wireshark via Chocolatey
+          choco install wireshark -y
+          
+          # Find Wireshark installation
+          $wsDir = "C:\Program Files\Wireshark"
+          if (-not (Test-Path $wsDir)) {
+            Write-Error "Wireshark not found at $wsDir"
+            exit 1
+          }
+          
+          # Create lib directory for import libraries
+          $libDir = "$wsDir\lib"
+          New-Item -ItemType Directory -Force -Path $libDir | Out-Null
+          
+          # Generate import libraries from DLLs using lib.exe
+          # This requires Visual Studio build tools to be available
+          $dlls = @("wireshark", "wsutil", "glib-2.0")
+          
+          foreach ($name in $dlls) {
+            $dllPath = Get-ChildItem -Path $wsDir -Filter "$name*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -eq $dllPath) {
+              $dllPath = Get-ChildItem -Path $wsDir -Filter "lib$name*.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            
+            if ($null -ne $dllPath) {
+              Write-Host "Generating import library for $($dllPath.Name)"
+              
+              # Generate .def file from DLL exports
+              $defFile = "$libDir\$name.def"
+              $libFile = "$libDir\$name.lib"
+              
+              # Use dumpbin to get exports
+              $exports = & dumpbin /exports $dllPath.FullName | Select-String -Pattern "^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)" -AllMatches
+              
+              # Create .def file
+              "LIBRARY $($dllPath.BaseName)" | Out-File -FilePath $defFile -Encoding ASCII
+              "EXPORTS" | Out-File -FilePath $defFile -Encoding ASCII -Append
+              
+              foreach ($match in $exports.Matches) {
+                $symbol = $match.Groups[1].Value
+                "  $symbol" | Out-File -FilePath $defFile -Encoding ASCII -Append
+              }
+              
+              # Generate .lib from .def
+              & lib /def:$defFile /out:$libFile /machine:x64
+              
+              if (Test-Path $libFile) {
+                Write-Host "Created $libFile"
+              } else {
+                Write-Warning "Failed to create $libFile"
+              }
+            } else {
+              Write-Warning "DLL not found for $name"
+            }
+          }
+          
+          # Set environment variable for build.rs
+          echo "WIRESHARK_DIR=$wsDir" >> $env:GITHUB_ENV
+          
+          # Show what we have
+          Write-Host "Wireshark DLLs:"
+          Get-ChildItem -Path $wsDir -Filter "*.dll" | Select-Object Name
+          Write-Host "Generated import libraries:"
+          Get-ChildItem -Path $libDir -Filter "*.lib" -ErrorAction SilentlyContinue | Select-Object Name
           
       - name: Build
         run: |
@@ -74,8 +159,9 @@ jobs:
           PLUGIN="target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }}"
           ./fix-dylib-paths.sh "$PLUGIN"
           
-      - name: Package
-        id: package
+      - name: Package (Unix)
+        if: matrix.platform != 'windows'
+        id: package-unix
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }} dist/matchy.so
@@ -89,12 +175,47 @@ jobs:
           
           cd dist
           tar -czvf ../matchy-wireshark-${WS_VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz ./*
+
+      - name: Package (Windows)
+        if: matrix.platform == 'windows'
+        id: package-windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
           
-      - name: Upload artifact
+          # Copy the built DLL
+          Copy-Item "target/${{ matrix.target }}/release/matchy_wireshark.dll" -Destination "dist/matchy.dll"
+          Copy-Item "README.md" -Destination "dist/"
+          Copy-Item "install.ps1" -Destination "dist/"
+          
+          # Get Wireshark version
+          $wsVersion = & "C:\Program Files\Wireshark\tshark.exe" --version | Select-Object -First 1
+          if ($wsVersion -match '(\d+\.\d+)') {
+            $WS_VERSION = $matches[1]
+          } else {
+            $WS_VERSION = "4.6"
+          }
+          
+          # Record version
+          $WS_VERSION | Out-File -FilePath "dist/WIRESHARK_VERSION" -Encoding ASCII -NoNewline
+          echo "wireshark_version=$WS_VERSION" >> $env:GITHUB_OUTPUT
+          
+          # Create zip archive
+          Compress-Archive -Path "dist/*" -DestinationPath "matchy-wireshark-$WS_VERSION-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          
+      - name: Upload artifact (Unix)
+        if: matrix.platform != 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: matchy-wireshark-${{ matrix.platform }}-${{ matrix.arch }}
-          path: matchy-wireshark-${{ steps.package.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          path: matchy-wireshark-${{ steps.package-unix.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+
+      - name: Upload artifact (Windows)
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: matchy-wireshark-${{ matrix.platform }}-${{ matrix.arch }}
+          path: matchy-wireshark-${{ steps.package-windows.outputs.wireshark_version }}-${{ matrix.platform }}-${{ matrix.arch }}.zip
 
   release:
     needs: [build]
@@ -114,7 +235,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/matchy-wireshark-*/*.tar.gz
+          files: |
+            artifacts/matchy-wireshark-*/*.tar.gz
+            artifacts/matchy-wireshark-*/*.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -199,7 +199,9 @@ fn find_wireshark_lib() -> Option<PathBuf> {
         PathBuf::from(r"C:\Wireshark"),
         PathBuf::from(r"C:\Wireshark\lib"),
         PathBuf::from(r"C:\Program Files\Wireshark"),
+        PathBuf::from(r"C:\Program Files\Wireshark\lib"),
         PathBuf::from(r"C:\Program Files (x86)\Wireshark"),
+        PathBuf::from(r"C:\Program Files (x86)\Wireshark\lib"),
     ];
 
     #[cfg(not(target_os = "windows"))]
