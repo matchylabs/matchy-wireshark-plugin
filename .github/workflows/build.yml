@@ -78,44 +78,7 @@ jobs:
           mkdir -p dist
           cp target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }} dist/matchy.so
           cp README.md dist/
-          
-          # Create platform-specific install script
-          cat > dist/install.sh << 'INSTALL_EOF'
-          #!/bin/bash
-          set -e
-          
-          echo "Matchy Wireshark Plugin Installer (${{ matrix.platform }} ${{ matrix.arch }})"
-          echo "============================================="
-          
-          # Detect Wireshark version
-          if command -v tshark &> /dev/null; then
-              WS_VERSION=$(tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
-          elif [ -x "/Applications/Wireshark.app/Contents/MacOS/tshark" ]; then
-              WS_VERSION=$(/Applications/Wireshark.app/Contents/MacOS/tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | tr '.' '-')
-          else
-              echo "Error: Wireshark not found"
-              exit 1
-          fi
-          
-          echo "Detected Wireshark version: ${WS_VERSION//-/.}"
-          
-          PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
-          mkdir -p "$PLUGIN_DIR"
-          
-          SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-          cp "$SCRIPT_DIR/matchy.so" "$PLUGIN_DIR/"
-          
-          echo "Installed to: $PLUGIN_DIR/matchy.so"
-          echo ""
-          echo "Configuration:"
-          echo "  1. Open Wireshark"
-          echo "  2. Go to Edit → Preferences → Protocols → Matchy"
-          echo "  3. Browse to select your .mxy threat database file"
-          echo ""
-          echo "Or use environment variable:"
-          echo "  MATCHY_DATABASE=/path/to/threats.mxy wireshark"
-          INSTALL_EOF
-          chmod +x dist/install.sh
+          cp install.sh dist/
           
           cd dist
           tar -czvf ../matchy-wireshark-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz ./*
