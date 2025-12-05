@@ -1,81 +1,90 @@
-#!/bin/bash
+#!/bin/sh
 # Install matchy-wireshark plugin
 #
 # This script installs the matchy Wireshark plugin for the current user.
 # It supports both macOS and Linux systems, and handles multiple Wireshark
 # installations (Homebrew, Wireshark.app, system packages).
+#
+# POSIX-compliant - works with /bin/sh, dash, bash, zsh, etc.
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get script directory (POSIX-compatible)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-info() { echo -e "${GREEN}$1${NC}"; }
-warn() { echo -e "${YELLOW}$1${NC}"; }
-error() { echo -e "${RED}$1${NC}"; }
+# Detect OS type
+detect_os() {
+    case "$(uname -s)" in
+        Darwin*) echo "darwin" ;;
+        Linux*)  echo "linux" ;;
+        *)       echo "unknown" ;;
+    esac
+}
+
+OS_TYPE="$(detect_os)"
+
+info() { printf "${GREEN}%s${NC}\n" "$1"; }
+warn() { printf "${YELLOW}%s${NC}\n" "$1"; }
+error() { printf "${RED}%s${NC}\n" "$1"; }
+
+# Extract major.minor version from Wireshark version string
+extract_version() {
+    echo "$1" | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/' | head -1
+}
 
 # Detect all Wireshark installations on the system
+# Output: newline-separated "type:version:prefix" entries
 detect_installations() {
-    local installs=()
-    
     # macOS: Check for Wireshark.app
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        if [[ -d "/Applications/Wireshark.app" ]]; then
-            local app_version=$(/Applications/Wireshark.app/Contents/MacOS/Wireshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-            if [[ -n "$app_version" ]]; then
-                installs+=("app:$app_version:/Applications/Wireshark.app")
+    if [ "$OS_TYPE" = "darwin" ]; then
+        if [ -d "/Applications/Wireshark.app" ]; then
+            app_version=$(/Applications/Wireshark.app/Contents/MacOS/Wireshark --version 2>/dev/null | head -1)
+            app_version=$(extract_version "$app_version")
+            if [ -n "$app_version" ]; then
+                echo "app:$app_version:/Applications/Wireshark.app"
             fi
         fi
         
         # Homebrew (ARM)
-        if [[ -x "/opt/homebrew/bin/tshark" ]]; then
-            local brew_version=$(/opt/homebrew/bin/tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-            if [[ -n "$brew_version" ]]; then
-                installs+=("homebrew-arm:$brew_version:/opt/homebrew")
+        if [ -x "/opt/homebrew/bin/tshark" ]; then
+            brew_version=$(/opt/homebrew/bin/tshark --version 2>/dev/null | head -1)
+            brew_version=$(extract_version "$brew_version")
+            if [ -n "$brew_version" ]; then
+                echo "homebrew-arm:$brew_version:/opt/homebrew"
             fi
         fi
         
         # Homebrew (Intel)
-        if [[ -x "/usr/local/bin/tshark" ]]; then
-            local brew_version=$(/usr/local/bin/tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-            if [[ -n "$brew_version" ]]; then
-                installs+=("homebrew-intel:$brew_version:/usr/local")
+        if [ -x "/usr/local/bin/tshark" ]; then
+            brew_version=$(/usr/local/bin/tshark --version 2>/dev/null | head -1)
+            brew_version=$(extract_version "$brew_version")
+            if [ -n "$brew_version" ]; then
+                echo "homebrew-intel:$brew_version:/usr/local"
             fi
         fi
     fi
     
     # Linux: Check common locations
-    if [[ "$OSTYPE" == "linux"* ]]; then
-        if command -v tshark &> /dev/null; then
-            local sys_version=$(tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-            if [[ -n "$sys_version" ]]; then
-                installs+=("system:$sys_version:")
+    if [ "$OS_TYPE" = "linux" ]; then
+        if command -v tshark >/dev/null 2>&1; then
+            sys_version=$(tshark --version 2>/dev/null | head -1)
+            sys_version=$(extract_version "$sys_version")
+            if [ -n "$sys_version" ]; then
+                echo "system:$sys_version:"
             fi
         fi
     fi
-    
-    # Fallback: check PATH
-    if [[ ${#installs[@]} -eq 0 ]]; then
-        if command -v tshark &> /dev/null; then
-            local path_version=$(tshark --version 2>/dev/null | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-            if [[ -n "$path_version" ]]; then
-                installs+=("path:$path_version:")
-            fi
-        fi
-    fi
-    
-    printf '%s\n' "${installs[@]}"
 }
 
 # Get glib path for a specific installation
 get_glib_path() {
-    local install_type="$1"
-    local install_prefix="$2"
+    install_type="$1"
     
     case "$install_type" in
         app)
@@ -90,8 +99,7 @@ get_glib_path() {
             ;;
         *)
             # Try to find it
-            local glib_path=$(find /opt/homebrew /usr/local /usr -name "libglib-2.0.so*" -o -name "libglib-2.0*.dylib" 2>/dev/null | head -1)
-            echo "$glib_path"
+            find /opt/homebrew /usr/local /usr -name "libglib-2.0.so*" -o -name "libglib-2.0*.dylib" 2>/dev/null | head -1
             ;;
     esac
 }
@@ -103,14 +111,15 @@ build_plugin() {
 }
 
 # Install for a specific Wireshark installation
+# Args: type version prefix
 install_for() {
-    local install_type="$1"
-    local version="$2"
-    local prefix="$3"
+    install_type="$1"
+    version="$2"
+    prefix="$3"
     
-    local version_dir="${version//./-}"
-    local plugin_dir="$HOME/.local/lib/wireshark/plugins/${version_dir}/epan"
-    local plugin_name="matchy.so"
+    version_dir=$(echo "$version" | tr '.' '-')
+    plugin_dir="$HOME/.local/lib/wireshark/plugins/${version_dir}/epan"
+    plugin_name="matchy.so"
     
     echo
     info "Installing for: $install_type (Wireshark $version)"
@@ -119,10 +128,10 @@ install_for() {
     mkdir -p "$plugin_dir"
     
     # Find source binary
-    local plugin_src=""
-    if [[ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ]]; then
+    plugin_src=""
+    if [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ]; then
         plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib"
-    elif [[ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]]; then
+    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]; then
         plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark.so"
     else
         error "Error: Plugin binary not found. Run: cargo build --release"
@@ -132,28 +141,33 @@ install_for() {
     cp "$plugin_src" "$plugin_dir/$plugin_name"
     
     # macOS: Remove quarantine attribute (for downloaded binaries)
-    if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [ "$OS_TYPE" = "darwin" ]; then
         xattr -d com.apple.quarantine "$plugin_dir/$plugin_name" 2>/dev/null || true
     fi
     
     # macOS: Fix library paths
-    if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [ "$OS_TYPE" = "darwin" ]; then
         install_name_tool -id "$plugin_name" "$plugin_dir/$plugin_name" 2>/dev/null || true
         
         # Fix wireshark/wsutil to use @rpath
         for lib in libwireshark libwsutil; do
             old_path=$(otool -L "$plugin_dir/$plugin_name" | grep "$lib" | awk '{print $1}' | head -1)
-            if [[ -n "$old_path" && "$old_path" != @rpath/* ]]; then
-                lib_name=$(basename "$old_path")
-                install_name_tool -change "$old_path" "@rpath/$lib_name" "$plugin_dir/$plugin_name" 2>/dev/null || true
+            if [ -n "$old_path" ]; then
+                case "$old_path" in
+                    @rpath/*) ;;  # Already using @rpath, skip
+                    *)
+                        lib_name=$(basename "$old_path")
+                        install_name_tool -change "$old_path" "@rpath/$lib_name" "$plugin_dir/$plugin_name" 2>/dev/null || true
+                        ;;
+                esac
             fi
         done
         
         # Fix glib path based on installation type
-        local glib_target=$(get_glib_path "$install_type" "$prefix")
-        if [[ -n "$glib_target" ]]; then
+        glib_target=$(get_glib_path "$install_type")
+        if [ -n "$glib_target" ]; then
             old_glib=$(otool -L "$plugin_dir/$plugin_name" | grep "libglib-2.0" | awk '{print $1}' | head -1)
-            if [[ -n "$old_glib" && "$old_glib" != "$glib_target" ]]; then
+            if [ -n "$old_glib" ] && [ "$old_glib" != "$glib_target" ]; then
                 install_name_tool -change "$old_glib" "$glib_target" "$plugin_dir/$plugin_name" 2>/dev/null || true
             fi
         fi
@@ -177,11 +191,11 @@ usage() {
 
 # Main
 main() {
-    local install_all=false
-    local list_only=false
-    local force_build=false
+    install_all=false
+    list_only=false
+    force_build=false
     
-    while [[ $# -gt 0 ]]; do
+    while [ $# -gt 0 ]; do
         case "$1" in
             --all) install_all=true; shift ;;
             --list) list_only=true; shift ;;
@@ -194,13 +208,10 @@ main() {
     echo "Matchy Wireshark Plugin Installer"
     echo "================================="
     
-    # Detect installations
-    installations=()
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && installations+=("$line")
-    done < <(detect_installations)
+    # Detect installations (newline-separated)
+    installations=$(detect_installations)
     
-    if [[ ${#installations[@]} -eq 0 ]]; then
+    if [ -z "$installations" ]; then
         error "Error: No Wireshark installation found"
         echo
         echo "Please install Wireshark:"
@@ -211,33 +222,35 @@ main() {
     
     echo
     echo "Detected Wireshark installations:"
-    for install in "${installations[@]}"; do
-        IFS=: read -r type version prefix <<< "$install"
+    echo "$installations" | while IFS=: read -r type version prefix; do
         echo "  - $type: version $version"
     done
     
-    if $list_only; then
+    if [ "$list_only" = true ]; then
         exit 0
     fi
     
     # Build if needed
-    if $force_build || { [[ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ]] && \
-                         [[ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]]; }; then
+    if [ "$force_build" = true ] || { [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ] && \
+                                       [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]; }; then
         build_plugin
     fi
     
     # Install
-    if $install_all; then
-        for install in "${installations[@]}"; do
-            IFS=: read -r type version prefix <<< "$install"
+    if [ "$install_all" = true ]; then
+        echo "$installations" | while IFS=: read -r type version prefix; do
             install_for "$type" "$version" "$prefix"
         done
     else
         # Install for first (preferred) installation
-        IFS=: read -r type version prefix <<< "${installations[0]}"
+        first=$(echo "$installations" | head -1)
+        type=$(echo "$first" | cut -d: -f1)
+        version=$(echo "$first" | cut -d: -f2)
+        prefix=$(echo "$first" | cut -d: -f3)
         install_for "$type" "$version" "$prefix"
         
-        if [[ ${#installations[@]} -gt 1 ]]; then
+        install_count=$(echo "$installations" | wc -l | tr -d ' ')
+        if [ "$install_count" -gt 1 ]; then
             echo
             warn "Note: Multiple Wireshark installations detected."
             echo "Run with --all to install for all of them."
