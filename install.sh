@@ -132,10 +132,10 @@ install_plugin() {
     if [ -f "$SCRIPT_DIR/matchy.so" ]; then
         # Binary package
         plugin_src="$SCRIPT_DIR/matchy.so"
-    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ]; then
-        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib"
-    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]; then
-        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark.so"
+    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib" ]; then
+        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib"
+    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so" ]; then
+        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so"
     else
         error "Error: Plugin binary not found. Run: cargo build --release"
         return 1
@@ -230,8 +230,8 @@ main() {
     
     # Build if needed (only in source tree, not binary packages)
     if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
-        if [ "$force_build" = true ] || { [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.dylib" ] && \
-                                           [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark.so" ]; }; then
+    if [ "$force_build" = true ] || { [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib" ] && \
+                                           [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so" ]; }; then
             build_plugin
         fi
     fi

@@ -1,5 +1,5 @@
 [package]
-name = "matchy-wireshark"
+name = "matchy-wireshark-plugin"
 version = "0.2.1"
 edition = "2021"
 authors = ["MatchyLabs Contributors"]
@@ -11,7 +11,7 @@ repository = "https://github.com/matchylabs/matchy-wireshark-plugin"
 build = "build.rs"
 
 [lib]
-name = "matchy_wireshark"
+name = "matchy_wireshark_plugin"
 crate-type = ["cdylib"]
 
 [dependencies]

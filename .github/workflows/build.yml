@@ -174,7 +174,7 @@ jobs:
       - name: Fix library paths (macOS only)
         if: matrix.platform == 'macos'
         run: |
-          PLUGIN="target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }}"
+          PLUGIN="target/${{ matrix.target }}/release/libmatchy_wireshark_plugin.${{ matrix.lib_ext }}"
           ./fix-dylib-paths.sh "${PLUGIN}"
           
       - name: Package (Unix)
@@ -190,7 +190,7 @@ jobs:
           # Create directory structure with root folder
           PKG_NAME="matchy-wireshark-plugin-${PLUGIN_VERSION}-wireshark-${WS_VERSION}-${{ matrix.platform }}-${{ matrix.arch }}"
           mkdir -p "dist/${PKG_NAME}"
-          cp "target/${{ matrix.target }}/release/libmatchy_wireshark.${{ matrix.lib_ext }}" "dist/${PKG_NAME}/matchy.so"
+          cp "target/${{ matrix.target }}/release/libmatchy_wireshark_plugin.${{ matrix.lib_ext }}" "dist/${PKG_NAME}/matchy.so"
           cp README.md "dist/${PKG_NAME}/"
           cp install.sh "dist/${PKG_NAME}/"
           echo "${WS_VERSION}" > "dist/${PKG_NAME}/MIN_WIRESHARK_VERSION"
@@ -222,7 +222,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "dist/$PKG_NAME" | Out-Null
           
           # Copy the built DLL
-          Copy-Item "target/${{ matrix.target }}/release/matchy_wireshark.dll" -Destination "dist/$PKG_NAME/matchy.dll"
+          Copy-Item "target/${{ matrix.target }}/release/matchy_wireshark_plugin.dll" -Destination "dist/$PKG_NAME/matchy.dll"
           Copy-Item "README.md" -Destination "dist/$PKG_NAME/"
           Copy-Item "install.ps1" -Destination "dist/$PKG_NAME/"
           

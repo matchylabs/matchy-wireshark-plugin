@@ -136,7 +136,7 @@ function Install-Plugin {
     $pluginSrc = $null
     $candidates = @(
         (Join-Path $PSScriptRoot "matchy.dll"),
-        (Join-Path $PSScriptRoot "target\release\matchy_wireshark.dll")
+        (Join-Path $PSScriptRoot "target\release\matchy_wireshark_plugin.dll")
     )
     
     foreach ($candidate in $candidates) {
