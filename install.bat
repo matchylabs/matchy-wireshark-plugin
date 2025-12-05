@@ -20,26 +20,27 @@ if exist "%SCRIPT_DIR%MIN_WIRESHARK_VERSION" (
 :: Check for version argument first
 set "TARGET_VERSION=%~1"
 
-:: If no argument, try to detect user's installed Wireshark
+:: If no argument, try to detect from Wireshark config file first
+:: Format: "# Recent settings file for Wireshark 4.6.0."
 if "%TARGET_VERSION%"=="" (
-    :: Try tshark first
-    where tshark >nul 2>&1
-    if !errorlevel!==0 (
-        for /f "tokens=2 delims= " %%v in ('tshark --version 2^>nul ^| findstr /r "^TShark"') do (
+    set "RECENT_FILE=%APPDATA%\Wireshark\recent"
+    if exist "!RECENT_FILE!" (
+        for /f "usebackq tokens=7 delims= " %%v in (`findstr /c:"Recent settings file for Wireshark" "!RECENT_FILE!" 2^>nul`) do (
             for /f "tokens=1,2 delims=." %%a in ("%%v") do (
-                set "TARGET_VERSION=%%a.%%b"
+                if "!TARGET_VERSION!"=="" set "TARGET_VERSION=%%a.%%b"
             )
         )
     )
 )
 
-:: If still no version, try Wireshark config file
+:: If still no version, try tshark
+:: Format: "TShark (Wireshark) 4.6.0"
 if "%TARGET_VERSION%"=="" (
-    set "RECENT_FILE=%APPDATA%\Wireshark\recent"
-    if exist "!RECENT_FILE!" (
-        for /f "usebackq tokens=3 delims= " %%v in (`findstr /r "^# Wireshark" "!RECENT_FILE!" 2^>nul`) do (
+    where tshark >nul 2>&1
+    if !errorlevel!==0 (
+        for /f "tokens=3 delims=) " %%v in ('tshark --version 2^>nul ^| findstr /r "^TShark"') do (
             for /f "tokens=1,2 delims=." %%a in ("%%v") do (
-                set "TARGET_VERSION=%%a.%%b"
+                if "!TARGET_VERSION!"=="" set "TARGET_VERSION=%%a.%%b"
             )
         )
     )
@@ -134,10 +135,6 @@ echo Configuration:
 echo   1. Open Wireshark
 echo   2. Go to Edit -^> Preferences -^> Protocols -^> Matchy
 echo   3. Browse to select your .mxy threat database file
-echo.
-echo Or use environment variable:
-echo   set MATCHY_DATABASE=C:\path\to\threats.mxy
-echo.
 
 :pause_exit
 :: Pause so user can see output if double-clicked
