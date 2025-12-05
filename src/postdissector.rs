@@ -53,12 +53,6 @@ pub unsafe extern "C" fn dissect_matchy(
     // Check source IP
     if let Some(ip) = src_ip {
         if let Some(threat) = lookup_ip(db, &ip) {
-            eprintln!(
-                "matchy: THREAT MATCH src={} level={} category={}",
-                ip,
-                threat.level.display_str(),
-                threat.category
-            );
             if !tree.is_null() {
                 add_threat_to_tree(tree, tvb, &ip.to_string(), &threat);
             }
@@ -68,12 +62,6 @@ pub unsafe extern "C" fn dissect_matchy(
     // Check destination IP
     if let Some(ip) = dst_ip {
         if let Some(threat) = lookup_ip(db, &ip) {
-            eprintln!(
-                "matchy: THREAT MATCH dst={} level={} category={}",
-                ip,
-                threat.level.display_str(),
-                threat.category
-            );
             if !tree.is_null() {
                 add_threat_to_tree(tree, tvb, &ip.to_string(), &threat);
             }
@@ -111,9 +99,7 @@ fn lookup_ip(db: &matchy::Database, ip: &IpAddr) -> Option<ThreatData> {
             }
         }
         Ok(None) => {}
-        Err(e) => {
-            eprintln!("matchy: query error: {}", e);
-        }
+        Err(_) => {}
     }
 
     None

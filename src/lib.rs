@@ -14,12 +14,25 @@ mod wireshark_ffi;
 use libc::{c_char, c_int};
 use std::ffi::CStr;
 use std::sync::Mutex;
+use wireshark_ffi::gboolean;
 
 /// Global threat database handle
 static THREAT_DB: Mutex<Option<matchy::Database>> = Mutex::new(None);
 
 /// Database path preference (pointer to C string)
 static mut DATABASE_PATH: *const c_char = std::ptr::null();
+
+/// Debug logging preference
+static mut DEBUG_LOGGING: gboolean = 0;
+
+/// Log a debug message if debug logging is enabled
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if unsafe { DEBUG_LOGGING != 0 } {
+            eprintln!("matchy: {}", format!($($arg)*));
+        }
+    };
+}
 
 /// Global protocol ID (set during registration)
 static mut PROTO_MATCHY: c_int = -1;
@@ -112,15 +125,8 @@ unsafe extern "C" fn proto_register_matchy() {
         FILTER_NAME.as_ptr() as *const c_char,
     );
 
-    eprintln!("matchy: protocol registered with id {}", PROTO_MATCHY);
-
     // Register header fields
     register_fields();
-
-    eprintln!(
-        "matchy: fields registered, HF_THREAT_DETECTED={}",
-        HF_THREAT_DETECTED
-    );
 
     // Register preferences
     register_preferences();
@@ -226,11 +232,11 @@ static mut ETT_ARRAY: [*mut c_int; 1] = [std::ptr::null_mut()];
 /// Callback invoked when preferences are updated
 /// This is called when the user changes the database path in preferences
 unsafe extern "C" fn preferences_apply() {
-    eprintln!("matchy: preferences_apply called");
+    debug_log!("preferences_apply called");
 
     // Check if a database path was set
     if DATABASE_PATH.is_null() {
-        eprintln!("matchy: no database path configured");
+        debug_log!("no database path configured");
         return;
     }
 
@@ -238,11 +244,11 @@ unsafe extern "C" fn preferences_apply() {
     let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
     if let Ok(path_str) = path.to_str() {
         if !path_str.is_empty() {
-            eprintln!("matchy: loading database from preference: {}", path_str);
+            debug_log!("loading database from preference: {}", path_str);
             if matchy_load_database(DATABASE_PATH) == 0 {
-                eprintln!("matchy: database loaded successfully");
+                debug_log!("database loaded successfully");
             } else {
-                eprintln!("matchy: failed to load database from {}", path_str);
+                debug_log!("failed to load database");
             }
         }
     }
@@ -257,25 +263,35 @@ unsafe fn register_preferences() {
     let prefs_module = prefs_register_protocol(PROTO_MATCHY, Some(preferences_apply));
 
     if prefs_module.is_null() {
-        eprintln!("matchy: failed to register preferences module");
         return;
     }
 
     // Register filename preference for database path
-    static NAME: &[u8] = b"database_path\0";
-    static TITLE: &[u8] = b"Database Path\0";
-    static DESC: &[u8] = b"Path to the .mxy threat database file\0";
+    static DB_NAME: &[u8] = b"database_path\0";
+    static DB_TITLE: &[u8] = b"Database Path\0";
+    static DB_DESC: &[u8] = b"Path to the .mxy threat database file\0";
 
     prefs_register_filename_preference(
         prefs_module,
-        NAME.as_ptr() as *const c_char,
-        TITLE.as_ptr() as *const c_char,
-        DESC.as_ptr() as *const c_char,
+        DB_NAME.as_ptr() as *const c_char,
+        DB_TITLE.as_ptr() as *const c_char,
+        DB_DESC.as_ptr() as *const c_char,
         std::ptr::addr_of_mut!(DATABASE_PATH),
         0, // for_writing = false (we're reading the database)
     );
 
-    eprintln!("matchy: preferences registered");
+    // Register debug logging preference
+    static DEBUG_NAME: &[u8] = b"debug_logging\0";
+    static DEBUG_TITLE: &[u8] = b"Debug Logging\0";
+    static DEBUG_DESC: &[u8] = b"Enable debug output to stderr\0";
+
+    prefs_register_bool_preference(
+        prefs_module,
+        DEBUG_NAME.as_ptr() as *const c_char,
+        DEBUG_TITLE.as_ptr() as *const c_char,
+        DEBUG_DESC.as_ptr() as *const c_char,
+        std::ptr::addr_of_mut!(DEBUG_LOGGING),
+    );
 }
 
 /// Register header fields for display and filtering
@@ -309,12 +325,12 @@ unsafe extern "C" fn proto_reg_handoff_matchy() {
 
     // Try to load database from environment variable
     if let Ok(db_path) = std::env::var("MATCHY_DATABASE") {
-        eprintln!("matchy: loading database from MATCHY_DATABASE={}", db_path);
-        let path_c = std::ffi::CString::new(db_path.clone()).unwrap();
+        debug_log!("loading database from MATCHY_DATABASE={}", db_path);
+        let path_c = std::ffi::CString::new(db_path).unwrap();
         if matchy_load_database(path_c.as_ptr()) == 0 {
-            eprintln!("matchy: database loaded successfully");
+            debug_log!("database loaded successfully");
         } else {
-            eprintln!("matchy: failed to load database from {}", db_path);
+            debug_log!("failed to load database");
         }
     }
 
@@ -347,10 +363,7 @@ pub extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
                 -1
             }
         }
-        Err(e) => {
-            eprintln!("matchy: failed to load database: {}", e);
-            -1
-        }
+        Err(_) => -1,
     }
 }
 

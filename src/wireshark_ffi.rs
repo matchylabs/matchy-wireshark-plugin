@@ -9,6 +9,9 @@
 
 use libc::{c_char, c_int, c_uint, c_void};
 
+/// Wireshark's boolean type (actually c_int)
+pub type gboolean = c_int;
+
 // ============================================================================
 // Opaque Types (pointers to Wireshark internal structures)
 // ============================================================================
@@ -191,6 +194,14 @@ extern "C" {
         description: *const c_char,
         var: *mut *const c_char,
         for_writing: c_int,
+    );
+
+    pub fn prefs_register_bool_preference(
+        module: *mut module_t,
+        name: *const c_char,
+        title: *const c_char,
+        description: *const c_char,
+        var: *mut gboolean,
     );
 
     // Dissector handle creation and registration
