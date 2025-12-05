@@ -58,6 +58,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            tshark \
             wireshark-dev \
             libwireshark-dev \
             libglib2.0-dev \
