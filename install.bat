@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: Install matchy-wireshark-plugin for Windows
-:: Run by double-clicking or from command prompt: install.bat [version]
+:: Run by double-clicking or from command prompt
 
 echo Matchy Wireshark Plugin Installer
 echo =================================
@@ -11,113 +11,12 @@ echo.
 :: Get script directory
 set "SCRIPT_DIR=%~dp0"
 
-:: Get package version (what the plugin was built for)
-set "PACKAGE_VERSION="
-if exist "%SCRIPT_DIR%MIN_WIRESHARK_VERSION" (
-    set /p PACKAGE_VERSION=<"%SCRIPT_DIR%MIN_WIRESHARK_VERSION"
-)
-
-:: Check for version argument first
-set "TARGET_VERSION=%~1"
-
-:: If no argument, try to detect from Wireshark config file first
-:: Format: "# Recent settings file for Wireshark 4.6.0."
-if "%TARGET_VERSION%"=="" (
-    set "RECENT_FILE=%APPDATA%\Wireshark\recent"
-    if exist "!RECENT_FILE!" (
-        for /f "usebackq tokens=7 delims= " %%v in (`findstr /c:"Recent settings file for Wireshark" "!RECENT_FILE!" 2^>nul`) do (
-            for /f "tokens=1,2 delims=." %%a in ("%%v") do (
-                if "!TARGET_VERSION!"=="" set "TARGET_VERSION=%%a.%%b"
-            )
-        )
-    )
-)
-
-:: If still no version, try tshark
-:: Format: "TShark (Wireshark) 4.6.0"
-if "%TARGET_VERSION%"=="" (
-    where tshark >nul 2>&1
-    if !errorlevel!==0 (
-        for /f "tokens=3 delims=) " %%v in ('tshark --version 2^>nul ^| findstr /r "^TShark"') do (
-            for /f "tokens=1,2 delims=." %%a in ("%%v") do (
-                if "!TARGET_VERSION!"=="" set "TARGET_VERSION=%%a.%%b"
-            )
-        )
-    )
-)
-
-:: If still nothing, fall back to package version
-if "%TARGET_VERSION%"=="" (
-    if not "%PACKAGE_VERSION%"=="" (
-        set "TARGET_VERSION=%PACKAGE_VERSION%"
-        echo Could not detect Wireshark version, using package version.
-    )
-)
-
-if "%TARGET_VERSION%"=="" (
-    echo ERROR: Could not determine Wireshark version
-    echo.
-    echo Please specify the version manually:
-    echo   install.bat 4.6
-    echo.
-    echo To find your Wireshark version:
-    echo   - Open Wireshark and go to Help -^> About
-    echo   - Or run: tshark --version
-    echo.
-    goto :pause_exit
-)
-
-echo Detected Wireshark version: %TARGET_VERSION%
-
-:: Warn if package version differs from detected version
-if not "%PACKAGE_VERSION%"=="" (
-    if not "%PACKAGE_VERSION%"=="%TARGET_VERSION%" (
-        echo.
-        echo WARNING: Version mismatch
-        echo   Plugin built for: %PACKAGE_VERSION%
-        echo   Your Wireshark:   %TARGET_VERSION%
-        echo   The plugin may not load correctly.
-        echo.
-    )
-)
-
-:: Set up plugin directory
-set "PLUGIN_DIR=%APPDATA%\Wireshark\plugins\%TARGET_VERSION%\epan"
-echo Plugin directory: %PLUGIN_DIR%
-echo.
-
-:: Create directory if needed
-if not exist "%PLUGIN_DIR%" (
-    echo Creating plugin directory...
-    mkdir "%PLUGIN_DIR%" 2>nul
-    if errorlevel 1 (
-        echo ERROR: Failed to create directory %PLUGIN_DIR%
-        goto :pause_exit
-    )
-)
-
-:: Find source DLL
-set "PLUGIN_SRC="
-if exist "%SCRIPT_DIR%matchy.dll" (
-    set "PLUGIN_SRC=%SCRIPT_DIR%matchy.dll"
-) else if exist "%SCRIPT_DIR%target\release\matchy_wireshark_plugin.dll" (
-    set "PLUGIN_SRC=%SCRIPT_DIR%target\release\matchy_wireshark_plugin.dll"
-)
-
-if "%PLUGIN_SRC%"=="" (
-    echo ERROR: Plugin DLL not found
-    echo Expected locations:
-    echo   - %SCRIPT_DIR%matchy.dll
-    echo   - %SCRIPT_DIR%target\release\matchy_wireshark_plugin.dll
-    goto :pause_exit
-)
-
-echo Installing from: %PLUGIN_SRC%
-
-:: Copy plugin
-copy /y "%PLUGIN_SRC%" "%PLUGIN_DIR%\matchy.dll" >nul
-if errorlevel 1 (
-    echo ERROR: Failed to copy plugin
+:: Check if this is a multi-version package (has plugins\ directory)
+if exist "%SCRIPT_DIR%plugins" (
+    call :install_all_versions
+) else (
+    echo ERROR: plugins directory not found
+    echo This doesn't appear to be a valid matchy-wireshark-plugin package.
     goto :pause_exit
 )
 
@@ -135,8 +34,50 @@ echo Configuration:
 echo   1. Open Wireshark
 echo   2. Go to Edit -^> Preferences -^> Protocols -^> Matchy
 echo   3. Browse to select your .mxy threat database file
+echo.
+goto :pause_exit
+
+:install_all_versions
+echo Installing plugin for all supported Wireshark versions...
+echo.
+set "INSTALLED=0"
+
+for /d %%d in ("%SCRIPT_DIR%plugins\*") do (
+    set "VERSION=%%~nd%%~xd"
+    set "PLUGIN_SRC=%%d\matchy.dll"
+    
+    if exist "!PLUGIN_SRC!" (
+        call :install_version "!VERSION!" "!PLUGIN_SRC!"
+        set /a INSTALLED+=1
+    )
+)
+
+if !INSTALLED!==0 (
+    echo ERROR: No plugin DLLs found in plugins\
+    goto :pause_exit
+)
+
+echo.
+echo Installed !INSTALLED! plugin version^(s^)
+goto :eof
+
+:install_version
+set "VERSION=%~1"
+set "PLUGIN_SRC=%~2"
+set "PLUGIN_DIR=%APPDATA%\Wireshark\plugins\%VERSION%\epan"
+
+echo   Installing for Wireshark %VERSION% -^> %PLUGIN_DIR%
+
+if not exist "%PLUGIN_DIR%" (
+    mkdir "%PLUGIN_DIR%" 2>nul
+)
+
+copy /y "%PLUGIN_SRC%" "%PLUGIN_DIR%\matchy.dll" >nul
+if errorlevel 1 (
+    echo     ERROR: Failed to copy plugin
+)
+goto :eof
 
 :pause_exit
-:: Pause so user can see output if double-clicked
 echo Press any key to exit...
 pause >nul

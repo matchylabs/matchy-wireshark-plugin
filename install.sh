@@ -81,41 +81,16 @@ detect_wireshark_version() {
     detect_version_from_binary
 }
 
-# Get the minimum Wireshark version required (binary packages only)
-get_min_version() {
-    if [ -f "$SCRIPT_DIR/MIN_WIRESHARK_VERSION" ]; then
-        tr -d '\n' < "$SCRIPT_DIR/MIN_WIRESHARK_VERSION"
-    fi
-}
-
-# Compare versions (returns 0 if v1 >= v2, 1 otherwise)
-version_gte() {
-    v1="$1"
-    v2="$2"
-    # Simple major.minor comparison
-    v1_major=$(echo "$v1" | cut -d. -f1)
-    v1_minor=$(echo "$v1" | cut -d. -f2)
-    v2_major=$(echo "$v2" | cut -d. -f1)
-    v2_minor=$(echo "$v2" | cut -d. -f2)
-    
-    if [ "$v1_major" -gt "$v2_major" ]; then
-        return 0
-    elif [ "$v1_major" -eq "$v2_major" ] && [ "$v1_minor" -ge "$v2_minor" ]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Build the plugin
+# Build the plugin (for source tree installs)
 build_plugin() {
     echo "Building plugin..."
     (cd "$SCRIPT_DIR" && cargo build --release)
 }
 
-# Install plugin to user directory
-install_plugin() {
+# Install a single plugin version to user directory
+install_plugin_version() {
     version="$1"
+    plugin_src="$2"
     
     # macOS uses dashes (4-6), Linux uses dots (4.6)
     if [ "$OS_TYPE" = "darwin" ]; then
@@ -126,38 +101,18 @@ install_plugin() {
     plugin_dir="$HOME/.local/lib/wireshark/plugins/${version_dir}/epan"
     plugin_name="matchy.so"
     
-    echo
-    info "Installing for Wireshark $version"
-    echo "  Plugin directory: $plugin_dir"
+    echo "  Installing for Wireshark $version -> $plugin_dir"
     
     mkdir -p "$plugin_dir"
-    
-    # Find source binary (check binary package first, then source tree)
-    plugin_src=""
-    if [ -f "$SCRIPT_DIR/matchy.so" ]; then
-        # Binary package
-        plugin_src="$SCRIPT_DIR/matchy.so"
-    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib" ]; then
-        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib"
-    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so" ]; then
-        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so"
-    else
-        error "Error: Plugin binary not found. Run: cargo build --release"
-        return 1
-    fi
-    
     cp "$plugin_src" "$plugin_dir/$plugin_name"
     
     # macOS: Remove quarantine attribute (for downloaded binaries)
     if [ "$OS_TYPE" = "darwin" ]; then
         xattr -d com.apple.quarantine "$plugin_dir/$plugin_name" 2>/dev/null || true
-    fi
-    
-    # macOS: Fix library paths to use @rpath
-    if [ "$OS_TYPE" = "darwin" ]; then
+        
+        # Fix library paths to use @rpath
         install_name_tool -id "$plugin_name" "$plugin_dir/$plugin_name" 2>/dev/null || true
         
-        # Fix wireshark/wsutil/glib to use @rpath
         for lib in libwireshark libwsutil libglib-2.0; do
             old_path=$(otool -L "$plugin_dir/$plugin_name" | grep "$lib" | awk '{print $1}' | head -1)
             if [ -n "$old_path" ]; then
@@ -174,8 +129,53 @@ install_plugin() {
         # Re-sign after modifying library paths (required on modern macOS)
         codesign -f -s - "$plugin_dir/$plugin_name" 2>/dev/null || true
     fi
+}
+
+# Install all plugin versions from package
+install_all_versions() {
+    plugins_dir="$SCRIPT_DIR/plugins"
     
-    info "  Installed successfully"
+    if [ ! -d "$plugins_dir" ]; then
+        error "Error: plugins directory not found"
+        return 1
+    fi
+    
+    installed=0
+    for version_dir in "$plugins_dir"/*/; do
+        if [ -d "$version_dir" ]; then
+            version=$(basename "$version_dir")
+            plugin_src="$version_dir/matchy.so"
+            if [ -f "$plugin_src" ]; then
+                install_plugin_version "$version" "$plugin_src"
+                installed=$((installed + 1))
+            fi
+        fi
+    done
+    
+    if [ "$installed" -eq 0 ]; then
+        error "Error: No plugin binaries found in plugins/"
+        return 1
+    fi
+    
+    info "Installed $installed plugin version(s)"
+}
+
+# Install from source tree (single version)
+install_from_source() {
+    version="$1"
+    
+    plugin_src=""
+    if [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib" ]; then
+        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib"
+    elif [ -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so" ]; then
+        plugin_src="$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so"
+    else
+        error "Error: Plugin binary not found. Run: cargo build --release"
+        return 1
+    fi
+    
+    install_plugin_version "$version" "$plugin_src"
+    info "Installed 1 plugin version"
 }
 
 # Show usage
@@ -203,45 +203,38 @@ main() {
     
     echo "Matchy Wireshark Plugin Installer"
     echo "================================="
+    echo
     
-    # Detect Wireshark version
-    installed_version=$(detect_wireshark_version)
-    min_version=$(get_min_version)
-    
-    if [ -z "$installed_version" ]; then
-        error "Error: No Wireshark installation found"
-        echo
-        echo "Please install Wireshark:"
-        echo "  macOS:  brew install wireshark  OR  https://www.wireshark.org/download.html"
-        echo "  Linux:  apt install wireshark / dnf install wireshark"
-        exit 1
-    fi
-    
-    # Check minimum version compatibility for binary packages
-    if [ -n "$min_version" ]; then
-        if ! version_gte "$installed_version" "$min_version"; then
-            error "Error: Wireshark version too old"
-            echo "  This plugin requires Wireshark $min_version or later"
-            echo "  You have Wireshark $installed_version installed"
+    # Check if this is a binary package (has plugins/ directory) or source tree
+    if [ -d "$SCRIPT_DIR/plugins" ]; then
+        # Binary package - install all bundled versions
+        info "Installing plugin for all supported Wireshark versions..."
+        install_all_versions
+    elif [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
+        # Source tree - detect version and build if needed
+        installed_version=$(detect_wireshark_version)
+        
+        if [ -z "$installed_version" ]; then
+            error "Error: Could not detect Wireshark version"
             echo
-            echo "Please upgrade Wireshark or download an older plugin version from:"
-            echo "  https://github.com/matchylabs/matchy-wireshark-plugin/releases"
+            echo "Please install Wireshark:"
+            echo "  macOS:  brew install wireshark  OR  https://www.wireshark.org/download.html"
+            echo "  Linux:  apt install wireshark / dnf install wireshark"
             exit 1
         fi
-        info "Detected Wireshark $installed_version (requires $min_version+)"
-    fi
-    
-    version="$installed_version"
-    
-    # Build if needed (only in source tree, not binary packages)
-    if [ -f "$SCRIPT_DIR/Cargo.toml" ]; then
-    if [ "$force_build" = true ] || { [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib" ] && \
+        
+        info "Detected Wireshark $installed_version"
+        
+        if [ "$force_build" = true ] || { [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.dylib" ] && \
                                            [ ! -f "$SCRIPT_DIR/target/release/libmatchy_wireshark_plugin.so" ]; }; then
             build_plugin
         fi
+        
+        install_from_source "$installed_version"
+    else
+        error "Error: Not a valid matchy-wireshark-plugin package"
+        exit 1
     fi
-    
-    install_plugin "$version"
     
     echo
     info "Installation complete!"
