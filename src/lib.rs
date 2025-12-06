@@ -83,6 +83,7 @@ static PROTO_PLUGIN: ProtoPlugin = ProtoPlugin {
 // Plugin Entry Point
 // ============================================================================
 
+#[cfg_attr(target_os = "windows", link(name = "wireshark", kind = "raw-dylib"))]
 extern "C" {
     fn proto_register_plugin(plugin: *const ProtoPlugin);
 }
