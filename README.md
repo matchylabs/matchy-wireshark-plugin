@@ -27,9 +27,9 @@ Download the appropriate package from [GitHub Releases](https://github.com/match
 tar -xzf matchy-wireshark-plugin-*.tar.gz
 cd matchy-wireshark-plugin-*/
 ./install.sh
-
-# Windows: extract zip and run install.bat
 ```
+
+On Windows, extract the zip and run `install.bat`.
 
 ### Building from Source
 
