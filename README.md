@@ -33,35 +33,7 @@ cargo build --release
 
 ### Install
 
-**Option 1: Use the install script**:
-```bash
-# After building, run the installer
-./install.sh
-
-# The script automatically:
-# - Detects your Wireshark version
-# - Finds the correct plugin directory
-# - Copies the plugin to the right location
-```
-
-**Option 2: Manual installation**:
-```bash
-# Detect Wireshark version
-WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
-
-# macOS uses dashes in version directory (4-6), Linux uses dots (4.6)
-# macOS
-PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/$(echo $WS_VERSION | tr '.' '-')/epan"
-mkdir -p "$PLUGIN_DIR"
-cp target/release/libmatchy_wireshark_plugin.dylib "$PLUGIN_DIR/matchy.so"
-
-# Linux
-PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
-mkdir -p "$PLUGIN_DIR"
-cp target/release/libmatchy_wireshark_plugin.so "$PLUGIN_DIR/matchy.so"
-```
-
-**Option 3: From pre-built release** (recommended):
+**Option 1: From pre-built release** (recommended):
 
 Download the appropriate package from [GitHub Releases](https://github.com/matchylabs/matchy-wireshark-plugin/releases):
 - macOS: `matchy-wireshark-plugin-*-macos-arm64.tar.gz`
@@ -77,6 +49,28 @@ cd matchy-wireshark-plugin-*/
 
 # Windows
 # Extract zip and run install.bat
+```
+
+**Option 2: Use the install script** (after building from source):
+```bash
+./install.sh
+```
+
+**Option 3: Manual installation**:
+```bash
+# Detect Wireshark version
+WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
+
+# macOS uses dashes in version directory (4-6), Linux uses dots (4.6)
+# macOS
+PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/$(echo $WS_VERSION | tr '.' '-')/epan"
+mkdir -p "$PLUGIN_DIR"
+cp target/release/libmatchy_wireshark_plugin.dylib "$PLUGIN_DIR/matchy.so"
+
+# Linux
+PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
+mkdir -p "$PLUGIN_DIR"
+cp target/release/libmatchy_wireshark_plugin.so "$PLUGIN_DIR/matchy.so"
 ```
 
 ## Usage
