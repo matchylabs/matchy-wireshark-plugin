@@ -265,7 +265,7 @@ fn generate_version() {
 
     // Read wireshark_version from Cargo.toml metadata
     let (ws_major, ws_minor) = read_wireshark_version();
-    eprintln!("Building for minimum Wireshark version: {}.{}", ws_major, ws_minor);
+    eprintln!("Building for Wireshark version: {}.{}", ws_major, ws_minor);
 
     // Generate a null-terminated C string array for the version
     // Format: ['0', '.', '1', '.', '0', '\0']

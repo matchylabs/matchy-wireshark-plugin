@@ -144,7 +144,7 @@ install_all_versions() {
     for version_dir in "$plugins_dir"/*/; do
         if [ -d "$version_dir" ]; then
             version=$(basename "$version_dir")
-            plugin_src="$version_dir/matchy.so"
+            plugin_src="${version_dir}matchy.so"
             if [ -f "$plugin_src" ]; then
                 install_plugin_version "$version" "$plugin_src"
                 installed=$((installed + 1))
