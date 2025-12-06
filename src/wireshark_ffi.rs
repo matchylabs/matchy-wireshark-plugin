@@ -179,10 +179,13 @@ pub type pref_cb = unsafe extern "C" fn();
 // On Windows, use raw-dylib to link directly against DLLs without needing import libraries.
 // This eliminates the need to generate .lib files from .dll in CI.
 // Note: Windows DLLs are named libwireshark.dll and libwsutil.dll (with lib prefix).
+//
+// Functions must be in separate extern blocks based on which DLL they come from,
+// because raw-dylib needs to know exactly which DLL exports each function.
+
+// Functions from libwireshark.dll
 #[cfg_attr(target_os = "windows", link(name = "libwireshark", kind = "raw-dylib"))]
-#[cfg_attr(target_os = "windows", link(name = "libwsutil", kind = "raw-dylib"))]
 #[cfg_attr(not(target_os = "windows"), link(name = "wireshark"))]
-#[cfg_attr(not(target_os = "windows"), link(name = "wsutil"))]
 extern "C" {
     // Protocol registration
     pub fn proto_register_protocol(
@@ -230,17 +233,6 @@ extern "C" {
         var: *mut gboolean,
     );
 
-    // Logging
-    pub fn ws_log_full(
-        domain: *const c_char,
-        level: ws_log_level,
-        file: *const c_char,
-        line: libc::c_long,
-        func: *const c_char,
-        format: *const c_char,
-        ...
-    );
-
     // Dissector handle creation and registration
     pub fn create_dissector_handle(dissector: dissector_t, proto: c_int) -> dissector_handle_t;
 
@@ -279,6 +271,22 @@ extern "C" {
     // TVB accessors
     pub fn tvb_captured_length(tvb: *mut tvbuff_t) -> c_uint;
     pub fn tvb_reported_length(tvb: *mut tvbuff_t) -> c_uint;
+}
+
+// Functions from libwsutil.dll
+#[cfg_attr(target_os = "windows", link(name = "libwsutil", kind = "raw-dylib"))]
+#[cfg_attr(not(target_os = "windows"), link(name = "wsutil"))]
+extern "C" {
+    // Logging
+    pub fn ws_log_full(
+        domain: *const c_char,
+        level: ws_log_level,
+        file: *const c_char,
+        line: libc::c_long,
+        func: *const c_char,
+        format: *const c_char,
+        ...
+    );
 }
 
 // ============================================================================
