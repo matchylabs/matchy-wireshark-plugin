@@ -49,43 +49,62 @@ fn get_tshark_version() -> Option<String> {
     None
 }
 
+/// Convert version string to directory format.
+/// macOS uses dashes (4-6), Linux/Windows use dots (4.6).
+fn version_to_dir(version: &str) -> String {
+    #[cfg(target_os = "macos")]
+    {
+        version.replace('.', "-")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        version.to_string()
+    }
+}
+
 /// Set up a temporary plugin directory structure for testing.
 /// Copies all available plugin versions, just like the real install.
 /// Returns the path to the temp plugin dir (set WIRESHARK_PLUGIN_DIR to this).
 fn setup_test_plugin_dir() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let temp_dir = std::env::temp_dir().join("matchy-wireshark-test");
-    
+
     // Clean up any previous test directory
     let _ = std::fs::remove_dir_all(&temp_dir);
-    
+
     #[cfg(target_os = "windows")]
     let (plugin_name, dest_name) = ("matchy_wireshark_plugin.dll", "matchy.dll");
     #[cfg(target_os = "macos")]
     let (plugin_name, dest_name) = ("libmatchy_wireshark_plugin.dylib", "matchy.so");
     #[cfg(target_os = "linux")]
     let (plugin_name, dest_name) = ("libmatchy_wireshark_plugin.so", "matchy.so");
-    
+
     let mut installed_count = 0;
-    
+
     // First, try to copy from plugins/ directory (CI builds with multiple versions)
+    // The plugins/ directory uses dot format (4.6), but we need to convert for macOS
     let plugins_dir = manifest_dir.join("plugins");
     if plugins_dir.exists() {
         if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
             for entry in entries.flatten() {
-                let version_dir = entry.path();
-                if version_dir.is_dir() {
-                    if let Some(version) = version_dir.file_name().and_then(|s| s.to_str()) {
+                let src_version_dir = entry.path();
+                if src_version_dir.is_dir() {
+                    if let Some(version) = src_version_dir.file_name().and_then(|s| s.to_str()) {
                         // Look for matchy.so or matchy.dll in the version directory
-                        let src = version_dir.join(dest_name);
+                        let src = src_version_dir.join(dest_name);
                         if src.exists() {
-                            let dest_dir = temp_dir.join(version).join("epan");
+                            // Convert version format for the destination
+                            let dest_version = version_to_dir(version);
+                            let dest_dir = temp_dir.join(&dest_version).join("epan");
                             std::fs::create_dir_all(&dest_dir)
                                 .expect("Failed to create temp plugin directory");
                             let dest = dest_dir.join(dest_name);
                             std::fs::copy(&src, &dest)
                                 .expect("Failed to copy plugin to temp directory");
-                            eprintln!("Installed plugin for version {} from plugins/", version);
+                            eprintln!(
+                                "Installed plugin for version {} -> {}",
+                                version, dest_version
+                            );
                             installed_count += 1;
                         }
                     }
@@ -93,31 +112,30 @@ fn setup_test_plugin_dir() -> PathBuf {
             }
         }
     }
-    
+
     // If no plugins/ directory (local dev), copy from target/ to common versions
     if installed_count == 0 {
         let candidates = [
             manifest_dir.join("target/release").join(plugin_name),
             manifest_dir.join("target/debug").join(plugin_name),
         ];
-        
+
         let plugin_path = candidates
             .into_iter()
             .find(|p| p.exists())
             .expect("Built plugin not found - run 'cargo build' first");
-        
+
         // Install to common Wireshark versions for local testing
         for version in ["4.0", "4.2", "4.4", "4.6"] {
-            let dest_dir = temp_dir.join(version).join("epan");
-            std::fs::create_dir_all(&dest_dir)
-                .expect("Failed to create temp plugin directory");
+            let dest_version = version_to_dir(version);
+            let dest_dir = temp_dir.join(&dest_version).join("epan");
+            std::fs::create_dir_all(&dest_dir).expect("Failed to create temp plugin directory");
             let dest = dest_dir.join(dest_name);
-            std::fs::copy(&plugin_path, &dest)
-                .expect("Failed to copy plugin to temp directory");
+            std::fs::copy(&plugin_path, &dest).expect("Failed to copy plugin to temp directory");
         }
         eprintln!("Installed plugin from target/ to all versions");
     }
-    
+
     temp_dir
 }
 
