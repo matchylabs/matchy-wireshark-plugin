@@ -14,26 +14,7 @@ A Wireshark plugin written in Rust that provides real-time threat intelligence m
 
 ## Installation
 
-### Requirements
-
-- **Wireshark**: 4.0 or later
-- **Rust**: 1.70 or later (for building from source)
-
-### Build from Source
-
-```bash
-# Build optimized release version
-cargo build --release
-
-# Output locations:
-# - macOS: target/release/libmatchy_wireshark_plugin.dylib
-# - Linux: target/release/libmatchy_wireshark_plugin.so
-# - Windows: target/release/matchy_wireshark_plugin.dll
-```
-
-### Install
-
-**Option 1: From pre-built release** (recommended):
+**Requires Wireshark 4.0 or later.**
 
 Download the appropriate package from [GitHub Releases](https://github.com/matchylabs/matchy-wireshark-plugin/releases):
 - macOS: `matchy-wireshark-plugin-*-macos-arm64.tar.gz`
@@ -47,31 +28,36 @@ tar -xzf matchy-wireshark-plugin-*.tar.gz
 cd matchy-wireshark-plugin-*/
 ./install.sh
 
-# Windows
-# Extract zip and run install.bat
+# Windows: extract zip and run install.bat
 ```
 
-**Option 2: Use the install script** (after building from source):
+### Building from Source
+
+Requires Rust 1.70 or later.
+
 ```bash
+cargo build --release
 ./install.sh
 ```
 
-**Option 3: Manual installation**:
+<details>
+<summary>Manual installation</summary>
+
 ```bash
 # Detect Wireshark version
 WS_VERSION=$(tshark --version | head -1 | sed -E 's/.*([0-9]+\.[0-9]+)\..*/\1/')
 
-# macOS uses dashes in version directory (4-6), Linux uses dots (4.6)
-# macOS
+# macOS (uses dashes in version directory)
 PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/$(echo $WS_VERSION | tr '.' '-')/epan"
 mkdir -p "$PLUGIN_DIR"
 cp target/release/libmatchy_wireshark_plugin.dylib "$PLUGIN_DIR/matchy.so"
 
-# Linux
+# Linux (uses dots in version directory)
 PLUGIN_DIR="$HOME/.local/lib/wireshark/plugins/${WS_VERSION}/epan"
 mkdir -p "$PLUGIN_DIR"
 cp target/release/libmatchy_wireshark_plugin.so "$PLUGIN_DIR/matchy.so"
 ```
+</details>
 
 ## Usage
 
