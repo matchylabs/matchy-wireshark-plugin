@@ -176,6 +176,17 @@ jobs:
         shell: pwsh
         run: |
           .\install.bat
+          
+          # Debug: Check installed Wireshark version and plugin detection
+          Write-Host "Wireshark version:"
+          tshark --version | Select-Object -First 2
+          Write-Host ""
+          Write-Host "Installed plugins:"
+          tshark -G plugins
+          Write-Host ""
+          Write-Host "Looking for matchy:"
+          tshark -G plugins | Select-String -Pattern "matchy" -CaseSensitive:$false
+          
           cargo test --test integration -- --nocapture
           
       - name: Package (Unix)
