@@ -177,15 +177,24 @@ jobs:
         run: |
           .\install.bat
           
-          # Debug: Check installed Wireshark version and plugin detection
+          # Debug: Check paths and dependencies
+          Write-Host "PATH includes Wireshark:"
+          $env:PATH -split ';' | Select-String -Pattern "Wireshark"
+          Write-Host ""
+          Write-Host "Wireshark DLLs present:"
+          Get-ChildItem "C:\Program Files\Wireshark\*.dll" | Select-Object Name | Select-Object -First 10
+          Write-Host ""
+          Write-Host "Plugin file exists:"
+          Get-ChildItem "$env:APPDATA\Wireshark\plugins\4.6\epan\" -ErrorAction SilentlyContinue
+          Write-Host ""
+          Write-Host "Plugin dependencies (dumpbin):"
+          dumpbin /dependents "$env:APPDATA\Wireshark\plugins\4.6\epan\matchy.dll" 2>&1 | Select-Object -First 20
+          Write-Host ""
           Write-Host "Wireshark version:"
-          tshark --version | Select-Object -First 2
+          tshark --version 2>&1 | Select-Object -First 3
           Write-Host ""
-          Write-Host "Installed plugins:"
-          tshark -G plugins
-          Write-Host ""
-          Write-Host "Looking for matchy:"
-          tshark -G plugins | Select-String -Pattern "matchy" -CaseSensitive:$false
+          Write-Host "Plugin load attempt:"
+          tshark -G plugins 2>&1 | Select-String -Pattern "matchy" -CaseSensitive:$false
           
           cargo test --test integration -- --nocapture
           
