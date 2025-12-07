@@ -9,12 +9,9 @@ use libc::c_int;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 /// Postdissector callback - processes each packet
-///
-/// This is called by Wireshark after all normal dissection is complete.
-/// We extract IPs from the packet and check them against the threat database.
+/// This is called by Wireshark after normal dissection.
 ///
 /// # Safety
-///
 /// This function is called from C code.
 #[no_mangle]
 pub unsafe extern "C" fn dissect_matchy(
@@ -84,21 +81,13 @@ unsafe fn extract_ip(addr: *const address) -> Option<IpAddr> {
 }
 
 /// Look up an IP in the threat database
-fn lookup_ip(db: &matchy::Database, ip: &IpAddr) -> Option<ThreatData> {
-    // Query the database using the lookup_ip method
-    match db.lookup_ip(*ip) {
-        Ok(Some(result)) => {
-            // Convert QueryResult to ThreatData
-            if let matchy::QueryResult::Ip { data, .. } = result {
-                // Convert DataValue to JSON for our ThreatData parser
-                let json = data_value_to_json(&data);
-                return ThreatData::from_json(&json);
-            }
-        }
-        Ok(None) => {}
-        Err(_) => {}
+///
+/// Returns parsed ThreatData if a match is found.
+unsafe fn lookup_ip(db: &matchy::Database, ip: &IpAddr) -> Option<ThreatData> {
+    if let Ok(Some(matchy::QueryResult::Ip { data, .. })) = db.lookup_ip(*ip) {
+        let json = data_value_to_json(&data);
+        return ThreatData::from_json(&json);
     }
-
     None
 }
 
@@ -164,7 +153,7 @@ unsafe fn add_threat_to_tree(
         return;
     }
 
-    // Add threat details
+    // Add threat details (Wireshark copies string values for FT_STRINGZ)
     let level_str = to_c_string(threat.level.display_str());
     proto_tree_add_string(subtree, hf_level, tvb, 0, 0, level_str.as_ptr());
 

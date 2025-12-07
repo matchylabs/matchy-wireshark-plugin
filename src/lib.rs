@@ -21,26 +21,6 @@ static THREAT_DB: Mutex<Option<matchy::Database>> = Mutex::new(None);
 /// Database path preference (pointer to C string)
 static mut DATABASE_PATH: *const c_char = std::ptr::null();
 
-/// Our logging domain
-const LOG_DOMAIN: &[u8] = b"Matchy\0";
-
-/// Log a debug message using Wireshark's logging framework
-/// Usage: `wireshark --log-level=debug --log-domain=Matchy`
-macro_rules! ws_debug {
-    ($msg:expr) => {{
-        use wireshark_ffi::ws_log_level;
-        unsafe {
-            wireshark_ffi::ws_log_full(
-                LOG_DOMAIN.as_ptr() as *const c_char,
-                ws_log_level::LOG_LEVEL_DEBUG,
-                std::ptr::null(), // file
-                0,                // line
-                std::ptr::null(), // func
-                $msg.as_ptr() as *const c_char,
-            );
-        }
-    }};
-}
 
 /// Global protocol ID (set during registration)
 static mut PROTO_MATCHY: c_int = -1;
@@ -226,24 +206,16 @@ static mut ETT_ARRAY: [*mut c_int; 1] = [std::ptr::null_mut()];
 /// Callback invoked when preferences are updated
 /// This is called when the user changes the database path in preferences
 unsafe extern "C" fn preferences_apply() {
-    ws_debug!(b"preferences_apply called\0");
-
     // Check if a database path was set
     if DATABASE_PATH.is_null() {
-        ws_debug!(b"no database path configured\0");
         return;
     }
 
-    // Try to load the database from the configured path
+    // Load database from the configured path
     let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
     if let Ok(path_str) = path.to_str() {
         if !path_str.is_empty() {
-            ws_debug!(b"loading database from preference\0");
-            if matchy_load_database(DATABASE_PATH) == 0 {
-                ws_debug!(b"database loaded successfully\0");
-            } else {
-                ws_debug!(b"failed to load database\0");
-            }
+            let _ = matchy_load_database(DATABASE_PATH);
         }
     }
 }
@@ -297,6 +269,58 @@ unsafe fn register_fields() {
 // Handoff Registration (called by Wireshark after all protocols registered)
 // ============================================================================
 
+/// Menu callback for "Reload Matchy Database"
+/// This reloads the database from the configured path and triggers a redissection
+unsafe extern "C" fn menu_reload_database(
+    _gui_type: wireshark_ffi::ext_menubar_gui_type,
+    _gui_object: *mut std::ffi::c_void,
+    _user_data: *mut std::ffi::c_void,
+) {
+    // Check if we have a database path configured
+    if DATABASE_PATH.is_null() {
+        return;
+    }
+
+    let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
+    if let Ok(path_str) = path.to_str() {
+        if path_str.is_empty() {
+            return;
+        }
+
+        let _ = matchy_load_database(DATABASE_PATH);
+        // Force redissection with current filter
+        wireshark_ffi::plugin_if_apply_filter(c"".as_ptr(), true);
+    }
+}
+
+/// Register the Tools menu items
+unsafe fn register_menu() {
+    use wireshark_ffi::*;
+
+    // Register a menu under Tools
+    let menu = ext_menubar_register_menu(
+        PROTO_MATCHY,
+        c"Matchy".as_ptr(),
+        true, // is_plugin
+    );
+
+    if menu.is_null() {
+        return;
+    }
+
+    // Place it under the Tools menu
+    ext_menubar_set_parentmenu(menu, c"Tools".as_ptr());
+
+    // Add "Reload Database" entry
+    ext_menubar_add_entry(
+        menu,
+        c"Reload Matchy Database".as_ptr(),
+        c"Reload the threat database and redissect all packets".as_ptr(),
+        menu_reload_database,
+        std::ptr::null_mut(),
+    );
+}
+
 /// Called by Wireshark to register our postdissector
 /// This is called after all protocols are registered, so we can safely
 /// create our dissector handle and register it.
@@ -306,17 +330,16 @@ unsafe extern "C" fn proto_reg_handoff_matchy() {
 
     // Try to load database from environment variable
     if let Ok(db_path) = std::env::var("MATCHY_DATABASE") {
-        ws_debug!(b"loading database from MATCHY_DATABASE\0");
         let path_c = std::ffi::CString::new(db_path).unwrap();
-        if matchy_load_database(path_c.as_ptr()) == 0 {
-            ws_debug!(b"database loaded successfully\0");
-        } else {
-            ws_debug!(b"failed to load database\0");
-        }
+        let _ = matchy_load_database(path_c.as_ptr());
     }
 
+    // Register postdissector
     let handle = create_dissector_handle(postdissector::dissect_matchy, PROTO_MATCHY);
     register_postdissector(handle);
+
+    // Register Tools menu
+    register_menu();
 }
 
 // ============================================================================
@@ -336,6 +359,17 @@ pub unsafe extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
     let path_str = match CStr::from_ptr(path).to_str() {
         Ok(s) => s,
         Err(_) => return -1,
+    };
+
+    // IMPORTANT: Drop the old database BEFORE opening the new one.
+    // The matchy library uses mmap, and opening a new file at the same path
+    // while the old mmap is still active can result in stale cached data.
+    let _had_old = if let Ok(mut guard) = THREAT_DB.lock() {
+        let existed = guard.is_some();
+        *guard = None; // Drop the old database, releasing the mmap
+        existed
+    } else {
+        return -1;
     };
 
     match matchy::Database::from(path_str).open() {

@@ -176,6 +176,31 @@ pub struct module_t {
 /// Preference update callback
 pub type pref_cb = unsafe extern "C" fn();
 
+// ============================================================================
+// Plugin Interface - Menu Types (from epan/plugin_if.h)
+// ============================================================================
+
+/// Opaque menu structure
+#[repr(C)]
+pub struct ext_menu_t {
+    _opaque: [u8; 0],
+}
+
+/// GUI type for menu callbacks
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ext_menubar_gui_type {
+    EXT_MENUBAR_GTK_GUI = 0,
+    EXT_MENUBAR_QT_GUI = 1,
+}
+
+/// Menu callback signature
+pub type ext_menubar_action_cb = unsafe extern "C" fn(
+    gui_type: ext_menubar_gui_type,
+    gui_object: *mut c_void,
+    user_data: *mut c_void,
+);
+
 // On Windows, use raw-dylib to link directly against DLLs without needing import libraries.
 // This eliminates the need to generate .lib files from .dll in CI.
 // Note: Windows DLLs are named libwireshark.dll and libwsutil.dll (with lib prefix).
@@ -257,6 +282,7 @@ extern "C" {
         value: *const c_char,
     ) -> *mut proto_item;
 
+
     pub fn proto_tree_add_boolean(
         tree: *mut proto_tree,
         hfindex: c_int,
@@ -271,6 +297,41 @@ extern "C" {
     // TVB accessors
     pub fn tvb_captured_length(tvb: *mut tvbuff_t) -> c_uint;
     pub fn tvb_reported_length(tvb: *mut tvbuff_t) -> c_uint;
+
+    // ============================================================================
+    // Plugin Interface - Menu Registration (from epan/plugin_if.h)
+    // ============================================================================
+
+    /// Register a new menu under Tools (or other parent menu)
+    /// Returns an opaque menu handle
+    pub fn ext_menubar_register_menu(
+        proto_id: c_int,
+        menulabel: *const c_char,
+        is_plugin: bool,
+    ) -> *mut ext_menu_t;
+
+    /// Set parent menu (e.g., "Tools" to place under Tools menu)
+    pub fn ext_menubar_set_parentmenu(
+        menu: *mut ext_menu_t,
+        parentmenu: *const c_char,
+    ) -> *mut ext_menu_t;
+
+    /// Add a menu entry with callback
+    pub fn ext_menubar_add_entry(
+        parent_menu: *mut ext_menu_t,
+        label: *const c_char,
+        tooltip: *const c_char,
+        callback: ext_menubar_action_cb,
+        user_data: *mut c_void,
+    );
+
+    // ============================================================================
+    // Plugin Interface - UI Actions (from epan/plugin_if.h)
+    // ============================================================================
+
+    /// Apply a display filter and optionally force redissection
+    /// If force is true, packets are redissected even if the filter hasn't changed
+    pub fn plugin_if_apply_filter(filter_string: *const c_char, force: bool);
 }
 
 // Functions from libwsutil.dll

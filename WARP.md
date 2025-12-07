@@ -81,6 +81,7 @@ The installers automatically detect your Wireshark version and install to the co
   - Version and plugin metadata constants
   - Protocol and field registration with Wireshark
   - Preferences registration (database path setting)
+  - Tools menu registration ("Reload Matchy Database")
 
 - **`postdissector.rs`**: Wireshark postdissector implementation
   - Registers the postdissector with Wireshark
@@ -106,7 +107,7 @@ The plugin uses Rust FFI to interface with Wireshark's C API:
 - Compiled as `cdylib` for dynamic loading
 - On Windows, uses `raw-dylib` linking to avoid needing import libraries
 - FFI functions are split into separate `extern` blocks based on which DLL exports them:
-  - `libwireshark.dll`: protocol registration, tree functions, preferences
+  - `libwireshark.dll`: protocol registration, tree functions, preferences, plugin_if menu API
   - `libwsutil.dll`: logging functions (`ws_log_full`)
 
 ### Thread Safety
@@ -146,6 +147,7 @@ The threat database is stored in a `static Mutex<Option<Arc<matchy::Database>>>`
 - Protocol tree display of threat information
 - Cross-platform builds (macOS, Linux, Windows)
 - Installer scripts for all platforms
+- Tools menu with "Reload Matchy Database" option
 
 **TODO**:
 - Domain name extraction from DNS packets
@@ -168,6 +170,14 @@ matchy.level == "critical"             # Specific threat level
 matchy.category == "malware"           # Specific category
 matchy.level == "high" && tcp.port == 443  # Combined filters
 ```
+
+### Tools Menu
+The plugin adds a "Matchy" submenu under Tools with:
+- **Reload Matchy Database**: Reloads the threat database from the configured path and
+  automatically triggers redissection of all packets with the updated database.
+
+Note: Wireshark's plugin API doesn't support dynamically enabling/disabling menu items,
+so the menu is always visible but will silently do nothing if no database path is configured.
 
 ### Performance Requirements
 - **Lookup time**: <1ms per packet (no capture degradation)
