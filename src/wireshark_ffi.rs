@@ -208,6 +208,66 @@ pub type ext_menubar_action_cb = unsafe extern "C" fn(
 // Functions must be in separate extern blocks based on which DLL they come from,
 // because raw-dylib needs to know exactly which DLL exports each function.
 
+// ============================================================================
+// Field Info and GPtrArray Types
+// ============================================================================
+
+/// Opaque header field info pointer (field registration info)
+#[repr(C)]
+pub struct _header_field_info {
+    _opaque: [u8; 0],
+}
+
+/// GLib GPtrArray - dynamic array of pointers
+#[repr(C)]
+pub struct GPtrArray {
+    pub pdata: *mut *mut libc::c_void,
+    pub len: c_uint,
+}
+
+/// Field info structure - represents a field instance in the protocol tree
+#[repr(C)]
+pub struct field_info {
+    pub hfinfo: *mut _header_field_info,
+    pub start: c_int,
+    pub length: c_int,
+    pub appendix_start: c_int,
+    pub appendix_length: c_int,
+    pub tree_type: c_int,
+    pub rep: *mut libc::c_void,   // item_label_t*
+    pub flags: u32,
+    pub value: fvalue_t,
+    pub ds_tvb: *mut tvbuff_t,
+    pub proto_layer_num: c_int,
+}
+
+/// Wireshark field value union - simplified for our needs
+#[repr(C)]
+pub union fvalue_t {
+    pub uinteger: u32,
+    pub sinteger: i32,
+    pub uinteger64: u64,
+    pub sinteger64: i64,
+    pub floating: f64,
+    pub strbuf: *mut libc::c_void, // wmem_strbuf_t*
+    pub bytes: *mut libc::c_void,  // GBytes*
+    pub tvb: *mut tvbuff_t,
+    pub ipv4: u32,
+    pub ipv6: [u8; 16],
+    pub guid: [u8; 16],
+    pub time: nstime_t,
+    pub protocol: protocol_value,
+}
+
+/// Protocol value for FT_PROTOCOL fields
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct protocol_value {
+    pub tvb: *mut tvbuff_t,
+    pub proto_string: *const c_char,
+    pub is_ptr: gboolean,
+}
+
 // Functions from libwireshark.dll
 #[cfg_attr(target_os = "windows", link(name = "libwireshark", kind = "raw-dylib"))]
 #[cfg_attr(not(target_os = "windows"), link(name = "wireshark"))]
@@ -332,6 +392,37 @@ extern "C" {
     /// Apply a display filter and optionally force redissection
     /// If force is true, packets are redissected even if the filter hasn't changed
     pub fn plugin_if_apply_filter(filter_string: *const c_char, force: bool);
+
+    // ============================================================================
+    // Field Lookup Functions (for extracting protocol fields by name)
+    // ============================================================================
+
+    /// Get header field info by field abbreviation (e.g., "dns.qry.name", "http.host")
+    /// Returns NULL if field not found
+    pub fn proto_registrar_get_byname(field_name: *const c_char) -> *mut _header_field_info;
+
+    /// Get all field_info instances matching a header_field_info from the tree
+    /// Returns a GPtrArray* of field_info* pointers, or NULL if none found
+    /// Caller must free the GPtrArray (but NOT the field_info pointers inside)
+    pub fn proto_get_finfo_ptr_array(
+        tree: *const proto_tree,
+        hfinfo: *const _header_field_info,
+    ) -> *mut GPtrArray;
+
+    /// Get string representation of a field value
+    /// Returns a string that is valid for the lifetime of the packet (wmem packet scope)
+    pub fn fvalue_get_string(fv: *const fvalue_t) -> *const c_char;
+
+    /// Get the header_field_info ID
+    pub fn proto_registrar_get_id_byname(field_name: *const c_char) -> c_int;
+}
+
+// Functions from GLib (linked through libwireshark)
+#[cfg_attr(target_os = "windows", link(name = "libwireshark", kind = "raw-dylib"))]
+#[cfg_attr(not(target_os = "windows"), link(name = "wireshark"))]
+extern "C" {
+    /// Free a GPtrArray (but not the elements inside)
+    pub fn g_ptr_array_free(array: *mut GPtrArray, free_seg: gboolean) -> *mut *mut libc::c_void;
 }
 
 // Functions from libwsutil.dll
@@ -491,6 +582,66 @@ pub unsafe fn address_to_ipv6(addr: *const address) -> Option<[u8; 16]> {
 /// The returned CString must be kept alive while the pointer is in use.
 pub fn to_c_string(s: &str) -> std::ffi::CString {
     std::ffi::CString::new(s).expect("String contains null byte")
+}
+
+// ============================================================================
+// Helper Functions for Field Extraction
+// ============================================================================
+
+/// Extract all string values for a given field name from the protocol tree.
+/// Field names are Wireshark filter names like "dns.qry.name", "http.host", etc.
+///
+/// # Safety
+/// Caller must ensure tree is valid and points to a valid proto_tree struct.
+/// The returned strings are only valid for the lifetime of the packet dissection.
+pub unsafe fn extract_string_fields(tree: *const proto_tree, field_name: &str) -> Vec<String> {
+    let mut results = Vec::new();
+
+    if tree.is_null() {
+        return results;
+    }
+
+    // Get the header field info for this field name
+    let field_name_c = to_c_string(field_name);
+    let hfinfo = proto_registrar_get_byname(field_name_c.as_ptr());
+
+    if hfinfo.is_null() {
+        // Field not registered (protocol not loaded or field doesn't exist)
+        return results;
+    }
+
+    // Get all instances of this field in the tree
+    let finfo_array = proto_get_finfo_ptr_array(tree, hfinfo);
+
+    if finfo_array.is_null() {
+        return results;
+    }
+
+    // Iterate through the array
+    let array = &*finfo_array;
+    for i in 0..array.len {
+        let finfo_ptr = *array.pdata.add(i as usize) as *const field_info;
+        if finfo_ptr.is_null() {
+            continue;
+        }
+
+        let finfo = &*finfo_ptr;
+
+        // Try to get string value directly from fvalue
+        let str_ptr = fvalue_get_string(&finfo.value);
+        if !str_ptr.is_null() {
+            if let Ok(s) = std::ffi::CStr::from_ptr(str_ptr).to_str() {
+                if !s.is_empty() {
+                    results.push(s.to_string());
+                }
+            }
+        }
+    }
+
+    // Free the array (but not the elements, which are owned by the tree)
+    g_ptr_array_free(finfo_array, 0); // 0 = FALSE, don't free segment
+
+    results
 }
 
 #[cfg(test)]

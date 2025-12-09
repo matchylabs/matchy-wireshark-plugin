@@ -31,6 +31,7 @@ static mut HF_THREAT_LEVEL: c_int = -1;
 static mut HF_THREAT_CATEGORY: c_int = -1;
 static mut HF_THREAT_SOURCE: c_int = -1;
 static mut HF_THREAT_INDICATOR: c_int = -1;
+static mut HF_THREAT_INDICATOR_TYPE: c_int = -1;
 
 /// Subtree index
 static mut ETT_MATCHY: c_int = -1;
@@ -109,7 +110,7 @@ unsafe extern "C" fn proto_register_matchy() {
 
 /// Static storage for header field registration info
 /// These MUST be static because Wireshark keeps pointers to them
-static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
+static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 6] = {
     use wireshark_ffi::*;
     [
         hf_register_info {
@@ -197,6 +198,23 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 5] = {
                 same_name_next: std::ptr::null_mut(),
             },
         },
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: c"Indicator Type".as_ptr(),
+                abbrev: c"matchy.indicator_type".as_ptr(),
+                type_: FT_STRINGZ,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: c"Type of indicator (ip, domain)".as_ptr(),
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
     ]
 };
 
@@ -257,6 +275,7 @@ unsafe fn register_fields() {
     HF_ARRAY[2].p_id = std::ptr::addr_of_mut!(HF_THREAT_CATEGORY);
     HF_ARRAY[3].p_id = std::ptr::addr_of_mut!(HF_THREAT_SOURCE);
     HF_ARRAY[4].p_id = std::ptr::addr_of_mut!(HF_THREAT_INDICATOR);
+    HF_ARRAY[5].p_id = std::ptr::addr_of_mut!(HF_THREAT_INDICATOR_TYPE);
 
     proto_register_field_array(PROTO_MATCHY, HF_ARRAY.as_mut_ptr(), HF_ARRAY.len() as c_int);
 
@@ -416,7 +435,7 @@ pub(crate) fn get_database() -> Option<std::sync::MutexGuard<'static, Option<mat
     THREAT_DB.lock().ok()
 }
 
-pub(crate) fn get_hf_ids() -> (c_int, c_int, c_int, c_int, c_int) {
+pub(crate) fn get_hf_ids() -> (c_int, c_int, c_int, c_int, c_int, c_int) {
     unsafe {
         (
             HF_THREAT_DETECTED,
@@ -424,6 +443,7 @@ pub(crate) fn get_hf_ids() -> (c_int, c_int, c_int, c_int, c_int) {
             HF_THREAT_CATEGORY,
             HF_THREAT_SOURCE,
             HF_THREAT_INDICATOR,
+            HF_THREAT_INDICATOR_TYPE,
         )
     }
 }
