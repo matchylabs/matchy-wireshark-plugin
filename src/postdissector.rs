@@ -375,7 +375,7 @@ fn data_value_to_json(data: &matchy_data_format::DataValue) -> serde_json::Value
 ///
 /// # Arguments
 /// * `indicator` - The matched indicator value (IP, domain, etc.)
-/// * `indicator_type` - The type of indicator ("ip" or "domain")
+/// * `indicator_type` - The type of indicator ("ip", "domain", "url", "email", "hash")
 unsafe fn add_threat_to_tree(
     tree: *mut proto_tree,
     tvb: *mut tvbuff_t,
@@ -383,14 +383,13 @@ unsafe fn add_threat_to_tree(
     indicator_type: &str,
     threat: &ThreatData,
 ) {
-    let (hf_detected, hf_level, hf_category, hf_source, hf_indicator, hf_indicator_type) =
-        crate::get_hf_ids();
+    let hf = crate::get_hf_ids();
     let ett = crate::get_ett_matchy();
 
     // Add the Matchy subtree
     let ti = proto_tree_add_boolean(
         tree,
-        hf_detected,
+        hf.detected,
         tvb,
         0,
         0,
@@ -408,19 +407,34 @@ unsafe fn add_threat_to_tree(
 
     // Add threat details (Wireshark copies string values for FT_STRINGZ)
     let level_str = to_c_string(threat.level.display_str());
-    proto_tree_add_string(subtree, hf_level, tvb, 0, 0, level_str.as_ptr());
+    proto_tree_add_string(subtree, hf.level, tvb, 0, 0, level_str.as_ptr());
 
     let category_str = to_c_string(&threat.category);
-    proto_tree_add_string(subtree, hf_category, tvb, 0, 0, category_str.as_ptr());
+    proto_tree_add_string(subtree, hf.category, tvb, 0, 0, category_str.as_ptr());
 
     let source_str = to_c_string(&threat.source);
-    proto_tree_add_string(subtree, hf_source, tvb, 0, 0, source_str.as_ptr());
+    proto_tree_add_string(subtree, hf.source, tvb, 0, 0, source_str.as_ptr());
 
     let indicator_str = to_c_string(indicator);
-    proto_tree_add_string(subtree, hf_indicator, tvb, 0, 0, indicator_str.as_ptr());
+    proto_tree_add_string(subtree, hf.indicator, tvb, 0, 0, indicator_str.as_ptr());
 
     let indicator_type_str = to_c_string(indicator_type);
-    proto_tree_add_string(subtree, hf_indicator_type, tvb, 0, 0, indicator_type_str.as_ptr());
+    proto_tree_add_string(subtree, hf.indicator_type, tvb, 0, 0, indicator_type_str.as_ptr());
+
+    // ThreatDB optional fields - only display if present
+    if let Some(confidence) = threat.confidence {
+        proto_tree_add_uint(subtree, hf.confidence, tvb, 0, 0, confidence as libc::c_uint);
+    }
+
+    if let Some(ref tlp) = threat.tlp {
+        let tlp_str = to_c_string(tlp);
+        proto_tree_add_string(subtree, hf.tlp, tvb, 0, 0, tlp_str.as_ptr());
+    }
+
+    if let Some(ref last_seen) = threat.last_seen {
+        let last_seen_str = to_c_string(last_seen);
+        proto_tree_add_string(subtree, hf.last_seen, tvb, 0, 0, last_seen_str.as_ptr());
+    }
 }
 
 #[cfg(test)]
