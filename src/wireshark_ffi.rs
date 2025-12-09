@@ -426,9 +426,11 @@ extern "C" {
     pub fn proto_registrar_get_id_byname(field_name: *const c_char) -> c_int;
 }
 
-// Functions from GLib (linked through libwireshark)
-#[cfg_attr(target_os = "windows", link(name = "libwireshark", kind = "raw-dylib"))]
-#[cfg_attr(not(target_os = "windows"), link(name = "wireshark"))]
+// Functions from GLib
+// On Windows, GLib is a separate DLL (libglib-2.0-0.dll)
+// On Unix, it's linked through the wireshark library
+#[cfg_attr(target_os = "windows", link(name = "libglib-2.0-0", kind = "raw-dylib"))]
+#[cfg_attr(not(target_os = "windows"), link(name = "glib-2.0"))]
 extern "C" {
     /// Free a GPtrArray (but not the elements inside)
     pub fn g_ptr_array_free(array: *mut GPtrArray, free_seg: gboolean) -> *mut *mut libc::c_void;
