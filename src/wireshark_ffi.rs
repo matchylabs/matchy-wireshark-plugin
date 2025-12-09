@@ -352,6 +352,15 @@ extern "C" {
         value: c_uint,
     ) -> *mut proto_item;
 
+    pub fn proto_tree_add_uint(
+        tree: *mut proto_tree,
+        hfindex: c_int,
+        tvb: *mut tvbuff_t,
+        start: c_int,
+        length: c_int,
+        value: c_uint,
+    ) -> *mut proto_item;
+
     pub fn proto_item_add_subtree(pi: *mut proto_item, idx: c_int) -> *mut proto_tree;
 
     // TVB accessors

@@ -32,6 +32,10 @@ static mut HF_THREAT_CATEGORY: c_int = -1;
 static mut HF_THREAT_SOURCE: c_int = -1;
 static mut HF_THREAT_INDICATOR: c_int = -1;
 static mut HF_THREAT_INDICATOR_TYPE: c_int = -1;
+// ThreatDB optional fields
+static mut HF_THREAT_CONFIDENCE: c_int = -1;
+static mut HF_THREAT_TLP: c_int = -1;
+static mut HF_THREAT_LAST_SEEN: c_int = -1;
 
 /// Subtree index
 static mut ETT_MATCHY: c_int = -1;
@@ -110,7 +114,7 @@ unsafe extern "C" fn proto_register_matchy() {
 
 /// Static storage for header field registration info
 /// These MUST be static because Wireshark keeps pointers to them
-static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 6] = {
+static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
     use wireshark_ffi::*;
     [
         hf_register_info {
@@ -207,7 +211,59 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 6] = {
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
-                blurb: c"Type of indicator (ip, domain)".as_ptr(),
+                blurb: c"Type of indicator (ip, domain, url, email, hash)".as_ptr(),
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+        // ThreatDB optional fields
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: c"Confidence".as_ptr(),
+                abbrev: c"matchy.confidence".as_ptr(),
+                type_: FT_UINT8,
+                display: BASE_DEC,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: c"Confidence score (0-100) for this indicator".as_ptr(),
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: c"TLP".as_ptr(),
+                abbrev: c"matchy.tlp".as_ptr(),
+                type_: FT_STRINGZ,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: c"Traffic Light Protocol marking for information sharing".as_ptr(),
+                id: -1,
+                parent: 0,
+                ref_type: 0,
+                same_name_prev_id: -1,
+                same_name_next: std::ptr::null_mut(),
+            },
+        },
+        hf_register_info {
+            p_id: std::ptr::null_mut(),
+            hfinfo: header_field_info {
+                name: c"Last Seen".as_ptr(),
+                abbrev: c"matchy.last_seen".as_ptr(),
+                type_: FT_STRINGZ,
+                display: BASE_NONE,
+                strings: std::ptr::null(),
+                bitmask: 0,
+                blurb: c"When the indicator was last observed active".as_ptr(),
                 id: -1,
                 parent: 0,
                 ref_type: 0,
@@ -276,6 +332,10 @@ unsafe fn register_fields() {
     HF_ARRAY[3].p_id = std::ptr::addr_of_mut!(HF_THREAT_SOURCE);
     HF_ARRAY[4].p_id = std::ptr::addr_of_mut!(HF_THREAT_INDICATOR);
     HF_ARRAY[5].p_id = std::ptr::addr_of_mut!(HF_THREAT_INDICATOR_TYPE);
+    // ThreatDB optional fields
+    HF_ARRAY[6].p_id = std::ptr::addr_of_mut!(HF_THREAT_CONFIDENCE);
+    HF_ARRAY[7].p_id = std::ptr::addr_of_mut!(HF_THREAT_TLP);
+    HF_ARRAY[8].p_id = std::ptr::addr_of_mut!(HF_THREAT_LAST_SEEN);
 
     proto_register_field_array(PROTO_MATCHY, HF_ARRAY.as_mut_ptr(), HF_ARRAY.len() as c_int);
 
@@ -435,16 +495,33 @@ pub(crate) fn get_database() -> Option<std::sync::MutexGuard<'static, Option<mat
     THREAT_DB.lock().ok()
 }
 
-pub(crate) fn get_hf_ids() -> (c_int, c_int, c_int, c_int, c_int, c_int) {
+/// Header field IDs for the postdissector
+pub(crate) struct HfIds {
+    pub detected: c_int,
+    pub level: c_int,
+    pub category: c_int,
+    pub source: c_int,
+    pub indicator: c_int,
+    pub indicator_type: c_int,
+    // ThreatDB optional fields
+    pub confidence: c_int,
+    pub tlp: c_int,
+    pub last_seen: c_int,
+}
+
+pub(crate) fn get_hf_ids() -> HfIds {
     unsafe {
-        (
-            HF_THREAT_DETECTED,
-            HF_THREAT_LEVEL,
-            HF_THREAT_CATEGORY,
-            HF_THREAT_SOURCE,
-            HF_THREAT_INDICATOR,
-            HF_THREAT_INDICATOR_TYPE,
-        )
+        HfIds {
+            detected: HF_THREAT_DETECTED,
+            level: HF_THREAT_LEVEL,
+            category: HF_THREAT_CATEGORY,
+            source: HF_THREAT_SOURCE,
+            indicator: HF_THREAT_INDICATOR,
+            indicator_type: HF_THREAT_INDICATOR_TYPE,
+            confidence: HF_THREAT_CONFIDENCE,
+            tlp: HF_THREAT_TLP,
+            last_seen: HF_THREAT_LAST_SEEN,
+        }
     }
 }
 

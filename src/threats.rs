@@ -55,6 +55,12 @@ pub struct ThreatData {
     pub level: ThreatLevel,
     pub category: String,
     pub source: String,
+    /// Confidence score (0-100), STIX 2.1 compatible
+    pub confidence: Option<u8>,
+    /// Traffic Light Protocol marking for information sharing
+    pub tlp: Option<String>,
+    /// When the indicator was last observed active (ISO 8601)
+    pub last_seen: Option<String>,
     #[allow(dead_code)] // Stored for future detailed threat view
     pub metadata: serde_json::Value,
 }
@@ -80,10 +86,29 @@ impl ThreatData {
             .unwrap_or("unknown")
             .to_string();
 
+        // ThreatDB optional fields
+        let confidence = data
+            .get("confidence")
+            .and_then(|v| v.as_u64())
+            .and_then(|v| u8::try_from(v.min(100)).ok());
+
+        let tlp = data
+            .get("tlp")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let last_seen = data
+            .get("last_seen")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         Some(ThreatData {
             level,
             category,
             source,
+            confidence,
+            tlp,
+            last_seen,
             metadata: data.clone(),
         })
     }
@@ -120,5 +145,22 @@ mod tests {
         assert_eq!(threat.level, ThreatLevel::Critical);
         assert_eq!(threat.category, "malware");
         assert_eq!(threat.source, "abuse.ch");
+    }
+
+    #[test]
+    fn test_threatdb_optional_fields() {
+        let json = json!({
+            "threat_level": "high",
+            "category": "c2",
+            "source": "emergingthreats",
+            "confidence": 85,
+            "tlp": "amber",
+            "last_seen": "2024-12-01T12:00:00Z"
+        });
+
+        let threat = ThreatData::from_json(&json).unwrap();
+        assert_eq!(threat.confidence, Some(85));
+        assert_eq!(threat.tlp, Some("amber".to_string()));
+        assert_eq!(threat.last_seen, Some("2024-12-01T12:00:00Z".to_string()));
     }
 }
