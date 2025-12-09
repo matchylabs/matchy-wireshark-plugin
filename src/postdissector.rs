@@ -231,7 +231,7 @@ pub unsafe extern "C" fn dissect_matchy(
                     continue;
                 }
 
-                if let Some(threat) = lookup_domain(db, &normalized) {
+                if let Some(threat) = lookup_string(db, &normalized) {
                     add_threat_to_tree(tree, tvb, &normalized, "domain", &threat);
                     matched_indicators.insert(normalized);
                 }
@@ -246,8 +246,7 @@ pub unsafe extern "C" fn dissect_matchy(
                     continue;
                 }
 
-                // Try to match the full URL
-                if let Some(threat) = lookup_domain(db, &url) {
+                if let Some(threat) = lookup_string(db, &url) {
                     add_threat_to_tree(tree, tvb, &url, "url", &threat);
                     matched_indicators.insert(url);
                 }
@@ -258,13 +257,12 @@ pub unsafe extern "C" fn dissect_matchy(
         for field_name in EMAIL_FIELDS {
             let emails = extract_string_fields(tree, field_name);
             for email in emails {
-                // Normalize email to lowercase
                 let normalized = email.to_lowercase();
                 if normalized.is_empty() || matched_indicators.contains(&normalized) {
                     continue;
                 }
 
-                if let Some(threat) = lookup_domain(db, &normalized) {
+                if let Some(threat) = lookup_string(db, &normalized) {
                     add_threat_to_tree(tree, tvb, &normalized, "email", &threat);
                     matched_indicators.insert(normalized);
                 }
@@ -279,7 +277,6 @@ pub unsafe extern "C" fn dissect_matchy(
                     continue;
                 }
 
-                // Try to parse as IP and look up
                 if let Ok(ip) = ip_str.parse::<IpAddr>() {
                     if let Some(threat) = lookup_ip(db, &ip) {
                         add_threat_to_tree(tree, tvb, &ip_str, "ip", &threat);
@@ -293,13 +290,12 @@ pub unsafe extern "C" fn dissect_matchy(
         for field_name in HASH_FIELDS {
             let hashes = extract_string_fields(tree, field_name);
             for hash in hashes {
-                // Normalize hash to lowercase (for hex hashes)
                 let normalized = hash.to_lowercase();
                 if normalized.is_empty() || matched_indicators.contains(&normalized) {
                     continue;
                 }
 
-                if let Some(threat) = lookup_domain(db, &normalized) {
+                if let Some(threat) = lookup_string(db, &normalized) {
                     add_threat_to_tree(tree, tvb, &normalized, "hash", &threat);
                     matched_indicators.insert(normalized);
                 }
@@ -322,10 +318,8 @@ unsafe fn extract_ip(addr: *const address) -> Option<IpAddr> {
     None
 }
 
-/// Look up an IP in the threat database
-///
-/// Returns parsed ThreatData if a match is found.
-unsafe fn lookup_ip(db: &matchy::Database, ip: &IpAddr) -> Option<ThreatData> {
+/// Look up an IP in the threat database and return parsed ThreatData if found.
+fn lookup_ip(db: &matchy::Database, ip: &IpAddr) -> Option<ThreatData> {
     if let Ok(Some(matchy::QueryResult::Ip { data, .. })) = db.lookup_ip(*ip) {
         let json = data_value_to_json(&data);
         return ThreatData::from_json(&json);
@@ -333,14 +327,9 @@ unsafe fn lookup_ip(db: &matchy::Database, ip: &IpAddr) -> Option<ThreatData> {
     None
 }
 
-/// Look up a domain/hostname in the threat database
-///
-/// Returns parsed ThreatData if a match is found.
-/// Supports both exact matches and glob patterns (e.g., *.evil.com)
-fn lookup_domain(db: &matchy::Database, domain: &str) -> Option<ThreatData> {
-    // Use lookup_string which checks both literal hash and glob patterns
-    if let Ok(Some(matchy::QueryResult::Pattern { data, .. })) = db.lookup_string(domain) {
-        // Get the first match's data (most specific match)
+/// Look up a string in the threat database and return parsed ThreatData if found.
+fn lookup_string(db: &matchy::Database, value: &str) -> Option<ThreatData> {
+    if let Ok(Some(matchy::QueryResult::Pattern { data, .. })) = db.lookup_string(value) {
         if let Some(Some(data_value)) = data.first() {
             let json = data_value_to_json(data_value);
             return ThreatData::from_json(&json);
