@@ -359,3 +359,146 @@ fn test_plugin_integration() {
 
     eprintln!("All integration tests passed!");
 }
+
+/// Test that display filters work correctly with matchy fields.
+/// This specifically tests the fix for GUI filter evaluation where
+/// tree=NULL was causing filters to not match.
+#[test]
+fn test_display_filter() {
+    // Verify tshark is available
+    let ws_version =
+        get_tshark_version().expect("tshark not found in PATH - install Wireshark/tshark first");
+    eprintln!("Detected Wireshark version: {}", ws_version);
+
+    // Set up temp plugin directory
+    let plugin_dir = setup_test_plugin_dir();
+    eprintln!("Using plugin directory: {}", plugin_dir.display());
+
+    // Verify plugin loads
+    assert!(
+        plugin_loaded_with_dir(&plugin_dir),
+        "matchy plugin failed to load"
+    );
+
+    let fixtures = fixtures_dir();
+    let pcap_path = fixtures.join("test.pcap");
+    let mxy_path = fixtures.join("test.mxy");
+
+    let db_pref = format!("matchy.database_path:{}", mxy_path.display());
+
+    // Test 1: Filter for High threat level - should match frames 1 and 3
+    let output = Command::new("tshark")
+        .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
+        .args([
+            "-o", &db_pref,
+            "-r", pcap_path.to_str().unwrap(),
+            "-Y", "matchy.level == \"High\"",
+            "-T", "fields",
+            "-e", "frame.number",
+        ])
+        .output()
+        .expect("Failed to run tshark with filter");
+
+    assert!(output.status.success(), "tshark filter command failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    
+    assert_eq!(
+        frames.len(), 2,
+        "Filter 'matchy.level == \"High\"' should match 2 frames, got: {:?}", frames
+    );
+    assert!(frames.contains(&"1"), "Frame 1 should match High filter");
+    assert!(frames.contains(&"3"), "Frame 3 should match High filter");
+
+    // Test 2: Filter for Medium threat level - should match frame 2
+    let output = Command::new("tshark")
+        .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
+        .args([
+            "-o", &db_pref,
+            "-r", pcap_path.to_str().unwrap(),
+            "-Y", "matchy.level == \"Medium\"",
+            "-T", "fields",
+            "-e", "frame.number",
+        ])
+        .output()
+        .expect("Failed to run tshark with filter");
+
+    assert!(output.status.success(), "tshark filter command failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    
+    assert_eq!(
+        frames.len(), 1,
+        "Filter 'matchy.level == \"Medium\"' should match 1 frame, got: {:?}", frames
+    );
+    assert!(frames.contains(&"2"), "Frame 2 should match Medium filter");
+
+    // Test 3: Filter for threat_detected (boolean) - should match frames 1, 2, 3
+    let output = Command::new("tshark")
+        .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
+        .args([
+            "-o", &db_pref,
+            "-r", pcap_path.to_str().unwrap(),
+            "-Y", "matchy.threat_detected",
+            "-T", "fields",
+            "-e", "frame.number",
+        ])
+        .output()
+        .expect("Failed to run tshark with filter");
+
+    assert!(output.status.success(), "tshark filter command failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    
+    assert_eq!(
+        frames.len(), 3,
+        "Filter 'matchy.threat_detected' should match 3 frames, got: {:?}", frames
+    );
+
+    // Test 4: Filter for category - should match specific frames
+    let output = Command::new("tshark")
+        .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
+        .args([
+            "-o", &db_pref,
+            "-r", pcap_path.to_str().unwrap(),
+            "-Y", "matchy.category == \"malware\"",
+            "-T", "fields",
+            "-e", "frame.number",
+        ])
+        .output()
+        .expect("Failed to run tshark with filter");
+
+    assert!(output.status.success(), "tshark filter command failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    
+    assert_eq!(
+        frames.len(), 2,
+        "Filter 'matchy.category == \"malware\"' should match 2 frames, got: {:?}", frames
+    );
+
+    // Test 5: Two-pass mode (closer to GUI behavior) - use -2 flag
+    let output = Command::new("tshark")
+        .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
+        .args([
+            "-o", &db_pref,
+            "-r", pcap_path.to_str().unwrap(),
+            "-2",  // Two-pass mode, similar to GUI
+            "-Y", "matchy.level == \"High\"",
+            "-T", "fields",
+            "-e", "frame.number",
+        ])
+        .output()
+        .expect("Failed to run tshark with two-pass filter");
+
+    assert!(output.status.success(), "tshark two-pass filter command failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    
+    assert_eq!(
+        frames.len(), 2,
+        "Two-pass filter 'matchy.level == \"High\"' should match 2 frames, got: {:?}", frames
+    );
+
+    eprintln!("All display filter tests passed!");
+}
