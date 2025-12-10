@@ -140,12 +140,13 @@ static THREAT_LEVEL_VALS: [wireshark_ffi::value_string; 6] = [
 
 /// Value strings for TLP (Traffic Light Protocol) field (enables filter autocomplete)
 /// TLP is a standard with fixed values defined in the ThreatDB schema
+/// Higher values = more restrictive (RED=5, CLEAR=1)
 static TLP_VALS: [wireshark_ffi::value_string; 6] = [
-    wireshark_ffi::value_string { value: 1, strptr: c"RED".as_ptr() },
-    wireshark_ffi::value_string { value: 2, strptr: c"AMBER+STRICT".as_ptr() },
+    wireshark_ffi::value_string { value: 5, strptr: c"RED".as_ptr() },
+    wireshark_ffi::value_string { value: 4, strptr: c"AMBER+STRICT".as_ptr() },
     wireshark_ffi::value_string { value: 3, strptr: c"AMBER".as_ptr() },
-    wireshark_ffi::value_string { value: 4, strptr: c"GREEN".as_ptr() },
-    wireshark_ffi::value_string { value: 5, strptr: c"CLEAR".as_ptr() },
+    wireshark_ffi::value_string { value: 2, strptr: c"GREEN".as_ptr() },
+    wireshark_ffi::value_string { value: 1, strptr: c"CLEAR".as_ptr() },
     // Null terminator
     wireshark_ffi::value_string { value: 0, strptr: std::ptr::null() },
 ];

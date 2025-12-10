@@ -47,14 +47,15 @@ impl ThreatLevel {
 
 /// Traffic Light Protocol (TLP) marking
 /// Standard for information sharing with fixed values
+/// Higher values = more restrictive (matches threat level intuition)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Tlp {
-    Red = 1,
-    AmberStrict = 2,
+    Clear = 1,
+    Green = 2,
     Amber = 3,
-    Green = 4,
-    Clear = 5,
+    AmberStrict = 4,
+    Red = 5,
 }
 
 impl Tlp {
