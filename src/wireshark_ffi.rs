@@ -201,6 +201,33 @@ pub type ext_menubar_action_cb = unsafe extern "C" fn(
     user_data: *mut c_void,
 );
 
+// ============================================================================
+// Plugin Interface - Toolbar Types (from epan/plugin_if.h)
+// ============================================================================
+
+/// Opaque toolbar structure
+#[repr(C)]
+pub struct ext_toolbar_t {
+    _opaque: [u8; 0],
+}
+
+/// Toolbar item types
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ext_toolbar_item_t {
+    EXT_TOOLBAR_BOOLEAN = 0,
+    EXT_TOOLBAR_BUTTON = 1,
+    EXT_TOOLBAR_STRING = 2,
+    EXT_TOOLBAR_SELECTOR = 3,
+}
+
+/// Toolbar action callback signature
+pub type ext_toolbar_action_cb = unsafe extern "C" fn(
+    toolbar_item: *mut c_void,
+    item_data: *mut c_void,
+    user_data: *mut c_void,
+);
+
 // On Windows, use raw-dylib to link directly against DLLs without needing import libraries.
 // This eliminates the need to generate .lib files from .dll in CI.
 // Note: Windows DLLs are named libwireshark.dll and libwsutil.dll (with lib prefix).
@@ -222,6 +249,13 @@ pub struct _header_field_info {
 #[repr(C)]
 pub struct GPtrArray {
     pub pdata: *mut *mut libc::c_void,
+    pub len: c_uint,
+}
+
+/// GLib GArray - dynamic array of arbitrary elements
+#[repr(C)]
+pub struct GArray {
+    pub data: *mut libc::c_char,
     pub len: c_uint,
 }
 
@@ -323,6 +357,16 @@ extern "C" {
 
     pub fn register_postdissector(handle: dissector_handle_t);
 
+    /// Register a routine to be called after all protocols have been registered.
+    /// This is the right place to look up hfids from other protocols.
+    pub fn register_final_registration_routine(func: unsafe extern "C" fn());
+
+    /// Tell Wireshark which header fields our postdissector wants to access.
+    /// This ensures the protocol tree is built when those fields are present,
+    /// even if the user hasn't explicitly requested verbose output.
+    /// hfids should be a GArray of c_int (hf_id integers).
+    pub fn set_postdissector_wanted_hfids(handle: dissector_handle_t, hfids: *mut GArray);
+
     // Tree item creation
     pub fn proto_tree_add_item(
         tree: *mut proto_tree,
@@ -403,6 +447,48 @@ extern "C" {
     pub fn plugin_if_apply_filter(filter_string: *const c_char, force: bool);
 
     // ============================================================================
+    // Plugin Interface - Toolbar Registration (from epan/plugin_if.h)
+    // ============================================================================
+
+    /// Register a new toolbar
+    /// Returns an opaque toolbar handle
+    /// The toolbar will appear in View -> Toolbars menu
+    pub fn ext_toolbar_register_toolbar(toolbar_label: *const c_char) -> *mut ext_toolbar_t;
+
+    /// Add an entry to a toolbar
+    /// @param parent_bar - the parent toolbar
+    /// @param item_type - type of item (button, string, boolean, selector)
+    /// @param label - display label for the item
+    /// @param defvalue - default value (can be null)
+    /// @param tooltip - tooltip text (can be null)
+    /// @param capture_only - if true, only active during capture
+    /// @param callback - callback function (can be null for display-only items)
+    /// @param user_data - user data passed to callback
+    pub fn ext_toolbar_add_entry(
+        parent_bar: *mut ext_toolbar_t,
+        item_type: ext_toolbar_item_t,
+        label: *const c_char,
+        defvalue: *const c_char,
+        tooltip: *const c_char,
+        capture_only: bool,
+        value_list: *mut c_void, // GList* for selectors, null otherwise
+        is_required: bool,
+        valid_regex: *const c_char,
+        callback: Option<ext_toolbar_action_cb>,
+        user_data: *mut c_void,
+    ) -> *mut ext_toolbar_t;
+
+    /// Update the value of a toolbar entry
+    /// @param entry - the toolbar entry to update
+    /// @param data - new value (as c_char* for strings)
+    /// @param silent - if true, don't trigger callback
+    pub fn ext_toolbar_update_value(
+        entry: *mut ext_toolbar_t,
+        data: *mut c_void,
+        silent: bool,
+    );
+
+    // ============================================================================
     // Field Lookup Functions (for extracting protocol fields by name)
     // ============================================================================
 
@@ -418,12 +504,33 @@ extern "C" {
         hfinfo: *const _header_field_info,
     ) -> *mut GPtrArray;
 
+    /// Get the root of a proto_tree
+    /// This is needed because postdissectors receive a subtree, not the root
+    pub fn proto_tree_get_root(tree: *mut proto_tree) -> *mut proto_tree;
+
+    /// Find field_info instances by field ID
+    /// Returns a GPtrArray* of field_info* pointers
+    pub fn proto_find_finfo(
+        tree: *mut proto_tree,
+        hfindex: c_int,
+    ) -> *mut GPtrArray;
+
     /// Get string representation of a field value
     /// Returns a string that is valid for the lifetime of the packet (wmem packet scope)
     pub fn fvalue_get_string(fv: *const fvalue_t) -> *const c_char;
 
     /// Get the header_field_info ID
     pub fn proto_registrar_get_id_byname(field_name: *const c_char) -> c_int;
+
+    /// Get string representation of a field_info item
+    /// This returns the display string for any field type
+    /// rtype: how to format (REPR_DISPLAY = 1 for display filter format)
+    /// allocator: memory allocator (NULL for wmem_packet_scope)
+    pub fn proto_item_fill_display_label(
+        finfo: *const field_info,
+        display_label: *mut c_char,
+        label_str_size: c_int,
+    ) -> c_int;
 }
 
 // Functions from GLib
@@ -434,6 +541,20 @@ extern "C" {
 extern "C" {
     /// Free a GPtrArray (but not the elements inside)
     pub fn g_ptr_array_free(array: *mut GPtrArray, free_seg: gboolean) -> *mut *mut libc::c_void;
+
+    /// Create a new GArray
+    /// zero_terminated: whether to null-terminate
+    /// clear_: whether to clear new elements to 0
+    /// element_size: size of each element in bytes
+    pub fn g_array_new(zero_terminated: gboolean, clear_: gboolean, element_size: c_uint)
+        -> *mut GArray;
+
+    /// Append values to a GArray
+    pub fn g_array_append_vals(
+        array: *mut GArray,
+        data: *const libc::c_void,
+        len: c_uint,
+    ) -> *mut GArray;
 }
 
 // Functions from libwsutil.dll
@@ -612,24 +733,31 @@ pub unsafe fn extract_string_fields(tree: *const proto_tree, field_name: &str) -
         return results;
     }
 
-    // Get the header field info for this field name
-    let field_name_c = to_c_string(field_name);
-    let hfinfo = proto_registrar_get_byname(field_name_c.as_ptr());
+    // Get the ROOT of the tree - postdissectors receive a subtree, but we need
+    // to search the entire packet's protocol tree to find fields from other dissectors
+    let root_tree = proto_tree_get_root(tree as *mut proto_tree);
+    if root_tree.is_null() {
+        return results;
+    }
 
-    if hfinfo.is_null() {
+    // Get the field ID by name
+    let field_name_c = to_c_string(field_name);
+    let hf_id = proto_registrar_get_id_byname(field_name_c.as_ptr());
+    if hf_id < 0 {
         // Field not registered (protocol not loaded or field doesn't exist)
         return results;
     }
 
-    // Get all instances of this field in the tree
-    let finfo_array = proto_get_finfo_ptr_array(tree, hfinfo);
-
+    // Get all instances of this field in the ROOT tree using proto_find_finfo
+    let finfo_array = proto_find_finfo(root_tree, hf_id);
     if finfo_array.is_null() {
+        // Field not present in this packet - this is normal for non-DNS packets
         return results;
     }
+    
+    let array = &*finfo_array;
 
     // Iterate through the array
-    let array = &*finfo_array;
     for i in 0..array.len {
         let finfo_ptr = *array.pdata.add(i as usize) as *const field_info;
         if finfo_ptr.is_null() {
@@ -638,10 +766,18 @@ pub unsafe fn extract_string_fields(tree: *const proto_tree, field_name: &str) -
 
         let finfo = &*finfo_ptr;
 
-        // Try to get string value directly from fvalue
-        let str_ptr = fvalue_get_string(&finfo.value);
-        if !str_ptr.is_null() {
-            if let Ok(s) = std::ffi::CStr::from_ptr(str_ptr).to_str() {
+        // Use proto_item_fill_display_label to get the string representation
+        // This is safer than trying to access fvalue directly since our struct layouts
+        // may not match Wireshark's exactly
+        let mut label_buf = [0u8; 1024];
+        let len = proto_item_fill_display_label(
+            finfo,
+            label_buf.as_mut_ptr() as *mut c_char,
+            label_buf.len() as c_int,
+        );
+        if len > 0 {
+            if let Ok(s) = std::str::from_utf8(&label_buf[..len as usize]) {
+                let s = s.trim_end_matches('\0');
                 if !s.is_empty() {
                     results.push(s.to_string());
                 }

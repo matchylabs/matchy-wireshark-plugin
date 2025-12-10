@@ -43,8 +43,23 @@
 use crate::threats::ThreatData;
 use crate::wireshark_ffi::*;
 use libc::c_int;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::{LazyLock, Mutex};
+
+/// Cache of threat matches per frame number.
+/// This allows filter passes (tree=NULL) to know which frames have threats
+/// from a previous full dissection pass.
+static FRAME_THREAT_CACHE: LazyLock<Mutex<HashMap<u32, Vec<CachedThreat>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Cached threat data for a frame
+#[derive(Clone)]
+struct CachedThreat {
+    indicator: String,
+    indicator_type: String,
+    threat: ThreatData,
+}
 
 /// Fields to extract for domain/hostname intelligence matching
 const DOMAIN_FIELDS: &[&str] = &[
@@ -169,6 +184,26 @@ pub unsafe extern "C" fn dissect_matchy(
         return 0;
     }
 
+    // Check if we have a pending toolbar update (from startup before UI was ready)
+    crate::try_pending_toolbar_update();
+
+    // Get frame number for cache lookups
+    let pinfo_full = pinfo as *const packet_info_full;
+    let frame_num = (*pinfo_full).num;
+
+    // If tree is NULL (filter pass), check if we have cached threats for this frame
+    if tree.is_null() {
+        if let Ok(cache) = FRAME_THREAT_CACHE.lock() {
+            if cache.contains_key(&frame_num) {
+                // We have cached threats - this frame matches!
+                // Return non-zero to indicate we added protocol data
+                return 1;
+            }
+        }
+        // No cached threats and no tree - nothing we can do
+        return 0;
+    }
+
     // Get the database - if not loaded, nothing to do
     let db_guard = match crate::get_database() {
         Some(guard) => guard,
@@ -182,6 +217,24 @@ pub unsafe extern "C" fn dissect_matchy(
             return 0;
         }
     };
+
+    // Check if we have cached threats for this frame (from a previous pass)
+    let cached_threats: Option<Vec<CachedThreat>> = if let Ok(cache) = FRAME_THREAT_CACHE.lock() {
+        cache.get(&frame_num).cloned()
+    } else {
+        None
+    };
+
+    // If we have cached threats, just add them to the tree
+    if let Some(threats) = cached_threats {
+        for cached in threats {
+            add_threat_to_tree(tree, tvb, &cached.indicator, &cached.indicator_type, &cached.threat);
+        }
+        return 1;
+    }
+
+    // No cache - do full threat lookup and cache results
+    let mut frame_threats: Vec<CachedThreat> = Vec::new();
 
     // Track indicators we've already matched to avoid duplicates
     let mut matched_indicators: HashSet<String> = HashSet::new();
@@ -199,9 +252,12 @@ pub unsafe extern "C" fn dissect_matchy(
         let indicator = ip.to_string();
         if !matched_indicators.contains(&indicator) {
             if let Some(threat) = lookup_ip(db, &ip) {
-                if !tree.is_null() {
-                    add_threat_to_tree(tree, tvb, &indicator, "ip", &threat);
-                }
+                add_threat_to_tree(tree, tvb, &indicator, "ip", &threat);
+                frame_threats.push(CachedThreat {
+                    indicator: indicator.clone(),
+                    indicator_type: "ip".to_string(),
+                    threat: threat.clone(),
+                });
                 matched_indicators.insert(indicator);
             }
         }
@@ -212,94 +268,128 @@ pub unsafe extern "C" fn dissect_matchy(
         let indicator = ip.to_string();
         if !matched_indicators.contains(&indicator) {
             if let Some(threat) = lookup_ip(db, &ip) {
-                if !tree.is_null() {
-                    add_threat_to_tree(tree, tvb, &indicator, "ip", &threat);
-                }
+                add_threat_to_tree(tree, tvb, &indicator, "ip", &threat);
+                frame_threats.push(CachedThreat {
+                    indicator: indicator.clone(),
+                    indicator_type: "ip".to_string(),
+                    threat: threat.clone(),
+                });
                 matched_indicators.insert(indicator);
             }
         }
     }
 
     // Extract and check domain/hostname fields from protocol tree
-    if !tree.is_null() {
-        for field_name in DOMAIN_FIELDS {
-            let domains = extract_string_fields(tree, field_name);
-            for domain in domains {
-                // Normalize: lowercase and strip trailing dot (DNS FQDN)
-                let normalized = domain.trim_end_matches('.').to_lowercase();
-                if normalized.is_empty() || matched_indicators.contains(&normalized) {
-                    continue;
-                }
+    for field_name in DOMAIN_FIELDS {
+        let domains = extract_string_fields(tree, field_name);
+        
+        for domain in domains {
+            // Normalize: lowercase and strip trailing dot (DNS FQDN)
+            let normalized = domain.trim_end_matches('.').to_lowercase();
+            if normalized.is_empty() || matched_indicators.contains(&normalized) {
+                continue;
+            }
 
-                if let Some(threat) = lookup_string(db, &normalized) {
-                    add_threat_to_tree(tree, tvb, &normalized, "domain", &threat);
-                    matched_indicators.insert(normalized);
+            if let Some(threat) = lookup_string(db, &normalized) {
+                add_threat_to_tree(tree, tvb, &normalized, "domain", &threat);
+                frame_threats.push(CachedThreat {
+                    indicator: normalized.clone(),
+                    indicator_type: "domain".to_string(),
+                    threat: threat.clone(),
+                });
+                matched_indicators.insert(normalized);
+            }
+        }
+    }
+
+    // Extract and check URL fields
+    for field_name in URL_FIELDS {
+        let urls = extract_string_fields(tree, field_name);
+        for url in urls {
+            if url.is_empty() || matched_indicators.contains(&url) {
+                continue;
+            }
+
+            if let Some(threat) = lookup_string(db, &url) {
+                add_threat_to_tree(tree, tvb, &url, "url", &threat);
+                frame_threats.push(CachedThreat {
+                    indicator: url.clone(),
+                    indicator_type: "url".to_string(),
+                    threat: threat.clone(),
+                });
+                matched_indicators.insert(url);
+            }
+        }
+    }
+
+    // Extract and check email address fields
+    for field_name in EMAIL_FIELDS {
+        let emails = extract_string_fields(tree, field_name);
+        for email in emails {
+            let normalized = email.to_lowercase();
+            if normalized.is_empty() || matched_indicators.contains(&normalized) {
+                continue;
+            }
+
+            if let Some(threat) = lookup_string(db, &normalized) {
+                add_threat_to_tree(tree, tvb, &normalized, "email", &threat);
+                frame_threats.push(CachedThreat {
+                    indicator: normalized.clone(),
+                    indicator_type: "email".to_string(),
+                    threat: threat.clone(),
+                });
+                matched_indicators.insert(normalized);
+            }
+        }
+    }
+
+    // Extract and check IP address fields (from DNS responses, headers, etc.)
+    for field_name in IP_FIELDS {
+        let ip_strings = extract_string_fields(tree, field_name);
+        for ip_str in ip_strings {
+            if ip_str.is_empty() || matched_indicators.contains(&ip_str) {
+                continue;
+            }
+
+            if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                if let Some(threat) = lookup_ip(db, &ip) {
+                    add_threat_to_tree(tree, tvb, &ip_str, "ip", &threat);
+                    frame_threats.push(CachedThreat {
+                        indicator: ip_str.clone(),
+                        indicator_type: "ip".to_string(),
+                        threat: threat.clone(),
+                    });
+                    matched_indicators.insert(ip_str);
                 }
             }
         }
+    }
 
-        // Extract and check URL fields
-        for field_name in URL_FIELDS {
-            let urls = extract_string_fields(tree, field_name);
-            for url in urls {
-                if url.is_empty() || matched_indicators.contains(&url) {
-                    continue;
-                }
+    // Extract and check hash/fingerprint fields
+    for field_name in HASH_FIELDS {
+        let hashes = extract_string_fields(tree, field_name);
+        for hash in hashes {
+            let normalized = hash.to_lowercase();
+            if normalized.is_empty() || matched_indicators.contains(&normalized) {
+                continue;
+            }
 
-                if let Some(threat) = lookup_string(db, &url) {
-                    add_threat_to_tree(tree, tvb, &url, "url", &threat);
-                    matched_indicators.insert(url);
-                }
+            if let Some(threat) = lookup_string(db, &normalized) {
+                add_threat_to_tree(tree, tvb, &normalized, "hash", &threat);
+                frame_threats.push(CachedThreat {
+                    indicator: normalized.clone(),
+                    indicator_type: "hash".to_string(),
+                    threat: threat.clone(),
+                });
+                matched_indicators.insert(normalized);
             }
         }
+    }
 
-        // Extract and check email address fields
-        for field_name in EMAIL_FIELDS {
-            let emails = extract_string_fields(tree, field_name);
-            for email in emails {
-                let normalized = email.to_lowercase();
-                if normalized.is_empty() || matched_indicators.contains(&normalized) {
-                    continue;
-                }
-
-                if let Some(threat) = lookup_string(db, &normalized) {
-                    add_threat_to_tree(tree, tvb, &normalized, "email", &threat);
-                    matched_indicators.insert(normalized);
-                }
-            }
-        }
-
-        // Extract and check IP address fields (from DNS responses, headers, etc.)
-        for field_name in IP_FIELDS {
-            let ip_strings = extract_string_fields(tree, field_name);
-            for ip_str in ip_strings {
-                if ip_str.is_empty() || matched_indicators.contains(&ip_str) {
-                    continue;
-                }
-
-                if let Ok(ip) = ip_str.parse::<IpAddr>() {
-                    if let Some(threat) = lookup_ip(db, &ip) {
-                        add_threat_to_tree(tree, tvb, &ip_str, "ip", &threat);
-                        matched_indicators.insert(ip_str);
-                    }
-                }
-            }
-        }
-
-        // Extract and check hash/fingerprint fields
-        for field_name in HASH_FIELDS {
-            let hashes = extract_string_fields(tree, field_name);
-            for hash in hashes {
-                let normalized = hash.to_lowercase();
-                if normalized.is_empty() || matched_indicators.contains(&normalized) {
-                    continue;
-                }
-
-                if let Some(threat) = lookup_string(db, &normalized) {
-                    add_threat_to_tree(tree, tvb, &normalized, "hash", &threat);
-                    matched_indicators.insert(normalized);
-                }
-            }
+    // Cache the threats for this frame (for filter passes)
+    if !frame_threats.is_empty() {
+        if let Ok(mut cache) = FRAME_THREAT_CACHE.lock() {
+            cache.insert(frame_num, frame_threats);
         }
     }
 

@@ -21,6 +21,16 @@ static THREAT_DB: Mutex<Option<matchy::Database>> = Mutex::new(None);
 /// Database path preference (pointer to C string)
 static mut DATABASE_PATH: *const c_char = std::ptr::null();
 
+/// Toolbar status entry (for updating database info display)
+static mut TOOLBAR_STATUS_ENTRY: *mut wireshark_ffi::ext_toolbar_t = std::ptr::null_mut();
+
+/// Dissector handle (stored for use in final registration)
+static mut DISSECTOR_HANDLE: wireshark_ffi::dissector_handle_t = std::ptr::null_mut();
+
+/// Flag to track if we need to update toolbar on first dissection
+/// (toolbar widget isn't ready during preferences_apply)
+static mut TOOLBAR_NEEDS_UPDATE: bool = false;
+
 
 /// Global protocol ID (set during registration)
 static mut PROTO_MATCHY: c_int = -1;
@@ -110,6 +120,10 @@ unsafe extern "C" fn proto_register_matchy() {
 
     // Register preferences
     register_preferences();
+
+    // Register toolbar (must be done during proto_register, not handoff)
+    // The toolbar will appear in View -> Toolbars -> Matchy
+    register_toolbar();
 }
 
 /// Static storage for header field registration info
@@ -139,7 +153,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"Threat Level".as_ptr(),
                 abbrev: c"matchy.level".as_ptr(),
-                type_: FT_STRINGZ,
+                type_: FT_STRING,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
@@ -156,7 +170,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"Category".as_ptr(),
                 abbrev: c"matchy.category".as_ptr(),
-                type_: FT_STRINGZ,
+                type_: FT_STRING,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
@@ -173,7 +187,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"Source".as_ptr(),
                 abbrev: c"matchy.source".as_ptr(),
-                type_: FT_STRINGZ,
+                type_: FT_STRING,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
@@ -190,7 +204,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"Indicator".as_ptr(),
                 abbrev: c"matchy.indicator".as_ptr(),
-                type_: FT_STRINGZ,
+                type_: FT_STRING,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
@@ -207,7 +221,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"Indicator Type".as_ptr(),
                 abbrev: c"matchy.indicator_type".as_ptr(),
-                type_: FT_STRINGZ,
+                type_: FT_STRING,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
@@ -242,7 +256,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"TLP".as_ptr(),
                 abbrev: c"matchy.tlp".as_ptr(),
-                type_: FT_STRINGZ,
+                type_: FT_STRING,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
@@ -259,7 +273,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"Last Seen".as_ptr(),
                 abbrev: c"matchy.last_seen".as_ptr(),
-                type_: FT_STRINGZ,
+                type_: FT_STRING,
                 display: BASE_NONE,
                 strings: std::ptr::null(),
                 bitmask: 0,
@@ -278,7 +292,7 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
 static mut ETT_ARRAY: [*mut c_int; 1] = [std::ptr::null_mut()];
 
 /// Callback invoked when preferences are updated
-/// This is called when the user changes the database path in preferences
+/// This is called both at startup (after prefs are read) and when user changes prefs
 unsafe extern "C" fn preferences_apply() {
     // Check if a database path was set
     if DATABASE_PATH.is_null() {
@@ -289,7 +303,11 @@ unsafe extern "C" fn preferences_apply() {
     let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
     if let Ok(path_str) = path.to_str() {
         if !path_str.is_empty() {
-            let _ = matchy_load_database(DATABASE_PATH);
+            if matchy_load_database(DATABASE_PATH) == 0 {
+                // Database loaded successfully - force redissection so our
+                // threat cache is populated for filter matching
+                wireshark_ffi::plugin_if_apply_filter(c"".as_ptr(), true);
+            }
         }
     }
 }
@@ -400,6 +418,231 @@ unsafe fn register_menu() {
     );
 }
 
+/// Register the header field IDs we want to access from other protocols.
+/// This tells Wireshark to build the protocol tree when these fields are present,
+/// which is necessary for our postdissector to work with display filters.
+unsafe fn register_wanted_hfids(handle: wireshark_ffi::dissector_handle_t) {
+    use wireshark_ffi::*;
+
+    // List of field names we want to access
+    // These are the same fields defined in postdissector.rs
+    let field_names: &[&str] = &[
+        // DNS
+        "dns.qry.name",
+        "dns.resp.name",
+        "dns.cname",
+        "dns.mx.mail_exchange",
+        "dns.a",
+        "dns.aaaa",
+        // HTTP
+        "http.host",
+        "http.request.uri.host",
+        "http.request.full_uri",
+        "http.request.uri",
+        "http.referer",
+        "http.location",
+        "http.x_forwarded_for",
+        "http2.headers.authority",
+        "http2.request.full_uri",
+        "http2.headers.path",
+        // TLS
+        "tls.handshake.extensions_server_name",
+        "tls.handshake.ja3",
+        "tls.handshake.ja3s",
+        // X.509
+        "x509sat.uTF8String",
+        "x509ce.dNSName",
+        "x509ce.rfc822Name",
+        "x509ce.iPAddress",
+        // SIP
+        "sip.from.host",
+        "sip.to.host",
+        // SMTP/Email
+        "imf.from",
+        "imf.to",
+        "smtp.req.parameter",
+    ];
+
+    // Create a GArray of hf_ids
+    let hfids = g_array_new(0, 0, std::mem::size_of::<c_int>() as libc::c_uint);
+    if hfids.is_null() {
+        return;
+    }
+
+    for field_name in field_names {
+        let field_name_c = std::ffi::CString::new(*field_name).unwrap();
+        let hf_id = proto_registrar_get_id_byname(field_name_c.as_ptr());
+        if hf_id >= 0 {
+            g_array_append_vals(hfids, &hf_id as *const c_int as *const libc::c_void, 1);
+        }
+    }
+
+    // Also add our OWN field IDs - this tells Wireshark that when filtering
+    // on matchy.* fields, it needs to build the tree
+    let our_fields: &[c_int] = &[
+        HF_THREAT_DETECTED,
+        HF_THREAT_LEVEL,
+        HF_THREAT_CATEGORY,
+        HF_THREAT_SOURCE,
+        HF_THREAT_INDICATOR,
+        HF_THREAT_INDICATOR_TYPE,
+        HF_THREAT_CONFIDENCE,
+        HF_THREAT_TLP,
+        HF_THREAT_LAST_SEEN,
+    ];
+    for &hf_id in our_fields {
+        if hf_id >= 0 {
+            g_array_append_vals(hfids, &hf_id as *const c_int as *const libc::c_void, 1);
+        }
+    }
+
+    // Tell Wireshark we want these fields
+    set_postdissector_wanted_hfids(handle, hfids);
+    // Note: Wireshark takes ownership of the GArray, don't free it
+}
+
+/// Toolbar button callback for reload (used by both status button and reload button)
+unsafe extern "C" fn toolbar_reload_callback(
+    _toolbar_item: *mut std::ffi::c_void,
+    _item_data: *mut std::ffi::c_void,
+    _user_data: *mut std::ffi::c_void,
+) {
+    // Reuse the same logic as the menu callback
+    if DATABASE_PATH.is_null() {
+        return;
+    }
+
+    let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
+    if let Ok(path_str) = path.to_str() {
+        if path_str.is_empty() {
+            return;
+        }
+
+        let _ = matchy_load_database(DATABASE_PATH);
+        // Force redissection with current filter
+        wireshark_ffi::plugin_if_apply_filter(c"".as_ptr(), true);
+    }
+}
+
+/// Register the Matchy toolbar
+/// Creates a toolbar with database status display and reload button
+unsafe fn register_toolbar() {
+    use wireshark_ffi::*;
+
+    // Register the toolbar - will appear in View -> Toolbars -> Matchy
+    let toolbar = ext_toolbar_register_toolbar(c"Matchy".as_ptr());
+
+    if toolbar.is_null() {
+        return;
+    }
+
+    // Single button that shows database status and reloads when clicked
+    // Button text is updated dynamically via update_toolbar_status()
+    // Format: "Matchy" initially, then "Matchy: filename.mxy (stats)" once UI is ready
+    let reload_entry = ext_toolbar_add_entry(
+        toolbar,
+        ext_toolbar_item_t::EXT_TOOLBAR_BUTTON,
+        c"Matchy".as_ptr(),                 // label (initial text, updated dynamically)
+        std::ptr::null(),                   // default value (not used for BUTTON)
+        c"Reload the Matchy threat database (configure path in Preferences > Protocols > Matchy)".as_ptr(),
+        false,                              // capture_only
+        std::ptr::null_mut(),               // value_list
+        false,                              // is_required
+        std::ptr::null(),                   // valid_regex
+        Some(toolbar_reload_callback),      // callback
+        std::ptr::null_mut(),               // user_data
+    );
+
+    // Store the entry handle for later updates
+    TOOLBAR_STATUS_ENTRY = reload_entry;
+}
+
+/// Update the toolbar status display with current database info
+/// If called before the UI is ready, sets a flag to update later
+unsafe fn update_toolbar_status() {
+    use wireshark_ffi::*;
+
+    if TOOLBAR_STATUS_ENTRY.is_null() {
+        return;
+    }
+
+    let status_text = if let Ok(guard) = THREAT_DB.lock() {
+        if let Some(ref db) = *guard {
+            // Get counts from the database
+            let ip_count = db.ip_count();
+            let literal_count = db.literal_count();
+            let glob_count = db.glob_count();
+
+            // Get filename from path
+            let filename = if !DATABASE_PATH.is_null() {
+                if let Ok(path_str) = CStr::from_ptr(DATABASE_PATH).to_str() {
+                    std::path::Path::new(path_str)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("database")
+                } else {
+                    "database"
+                }
+            } else {
+                "database"
+            };
+
+            // Format counts with K/M suffixes for readability
+            let format_count = |n: usize| -> String {
+                if n >= 1_000_000 {
+                    format!("{:.1}M", n as f64 / 1_000_000.0)
+                } else if n >= 1_000 {
+                    format!("{:.1}K", n as f64 / 1_000.0)
+                } else {
+                    format!("{}", n)
+                }
+            };
+
+            // Build status string with non-zero counts
+            let mut parts = Vec::new();
+            if ip_count > 0 {
+                parts.push(format!("{} IPs", format_count(ip_count)));
+            }
+            if literal_count > 0 {
+                parts.push(format!("{} strings", format_count(literal_count)));
+            }
+            if glob_count > 0 {
+                parts.push(format!("{} patterns", format_count(glob_count)));
+            }
+
+            if parts.is_empty() {
+                format!("Matchy: {} (empty)", filename)
+            } else {
+                format!("Matchy: {} ({})", filename, parts.join(", "))
+            }
+        } else {
+            "Matchy: No database".to_string()
+        }
+    } else {
+        "Matchy: No database".to_string()
+    };
+
+    // Update the toolbar entry
+    let status_c = std::ffi::CString::new(status_text).unwrap_or_default();
+    ext_toolbar_update_value(
+        TOOLBAR_STATUS_ENTRY,
+        status_c.as_ptr() as *mut std::ffi::c_void,
+        true, // silent - don't trigger callback
+    );
+
+    // Also set the flag so we can retry later if the widget wasn't ready
+    TOOLBAR_NEEDS_UPDATE = true;
+}
+
+/// Try to update the toolbar if we have a pending update
+/// Called from dissector when we know the UI is ready
+pub(crate) unsafe fn try_pending_toolbar_update() {
+    if TOOLBAR_NEEDS_UPDATE {
+        TOOLBAR_NEEDS_UPDATE = false;
+        update_toolbar_status();
+    }
+}
+
 /// Called by Wireshark to register our postdissector
 /// This is called after all protocols are registered, so we can safely
 /// create our dissector handle and register it.
@@ -407,18 +650,38 @@ unsafe fn register_menu() {
 unsafe extern "C" fn proto_reg_handoff_matchy() {
     use wireshark_ffi::*;
 
+    // Create dissector handle first
+    let handle = create_dissector_handle(postdissector::dissect_matchy, PROTO_MATCHY);
+    
+    // Store handle for use in final registration callback
+    DISSECTOR_HANDLE = handle;
+
+    // Register a callback for after ALL protocols have registered their fields.
+    // This sets up the wanted hfids BEFORE we're active as a postdissector
+    register_final_registration_routine(final_registration_callback);
+
+    // NOW register as postdissector (after setting up the callback)
+    register_postdissector(handle);
+
+    // Register Tools menu
+    register_menu();
+
     // Try to load database from environment variable
     if let Ok(db_path) = std::env::var("MATCHY_DATABASE") {
         let path_c = std::ffi::CString::new(db_path).unwrap();
         let _ = matchy_load_database(path_c.as_ptr());
     }
+    // Note: Database from preferences is loaded via preferences_apply() callback
+    // which is called after this. The toolbar update will be deferred until
+    // the first packet dissection when the UI is ready.
+}
 
-    // Register postdissector
-    let handle = create_dissector_handle(postdissector::dissect_matchy, PROTO_MATCHY);
-    register_postdissector(handle);
-
-    // Register Tools menu
-    register_menu();
+/// Called after ALL protocols have registered their fields.
+/// This is the right time to look up hfids from other protocols.
+unsafe extern "C" fn final_registration_callback() {
+    if !DISSECTOR_HANDLE.is_null() {
+        register_wanted_hfids(DISSECTOR_HANDLE);
+    }
 }
 
 // ============================================================================
@@ -455,12 +718,17 @@ pub unsafe extern "C" fn matchy_load_database(path: *const c_char) -> c_int {
         Ok(db) => {
             if let Ok(mut guard) = THREAT_DB.lock() {
                 *guard = Some(db);
+                drop(guard); // Release lock before updating toolbar
+                update_toolbar_status();
                 0
             } else {
                 -1
             }
         }
-        Err(_) => -1,
+        Err(_) => {
+            update_toolbar_status(); // Update to show "no database" or error
+            -1
+        }
     }
 }
 
