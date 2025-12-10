@@ -45,6 +45,37 @@ impl ThreatLevel {
     }
 }
 
+/// Traffic Light Protocol (TLP) marking
+/// Standard for information sharing with fixed values
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Tlp {
+    Red = 1,
+    AmberStrict = 2,
+    Amber = 3,
+    Green = 4,
+    Clear = 5,
+}
+
+impl Tlp {
+    /// Parse TLP from string (case-insensitive)
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "RED" => Some(Tlp::Red),
+            "AMBER+STRICT" => Some(Tlp::AmberStrict),
+            "AMBER" => Some(Tlp::Amber),
+            "GREEN" => Some(Tlp::Green),
+            "CLEAR" | "WHITE" => Some(Tlp::Clear), // WHITE is old name for CLEAR
+            _ => None,
+        }
+    }
+
+    /// Get numeric value for Wireshark field encoding
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+}
+
 /// Threat data extracted from matchy lookup
 #[derive(Debug, Clone)]
 pub struct ThreatData {
@@ -54,7 +85,7 @@ pub struct ThreatData {
     /// Confidence score (0-100), STIX 2.1 compatible
     pub confidence: Option<u8>,
     /// Traffic Light Protocol marking for information sharing
-    pub tlp: Option<String>,
+    pub tlp: Option<Tlp>,
     /// When the indicator was last observed active (ISO 8601)
     pub last_seen: Option<String>,
     #[allow(dead_code)] // Stored for future detailed threat view
@@ -91,7 +122,7 @@ impl ThreatData {
         let tlp = data
             .get("tlp")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .and_then(Tlp::from_str);
 
         let last_seen = data
             .get("last_seen")
@@ -156,7 +187,7 @@ mod tests {
 
         let threat = ThreatData::from_json(&json).unwrap();
         assert_eq!(threat.confidence, Some(85));
-        assert_eq!(threat.tlp, Some("amber".to_string()));
+        assert_eq!(threat.tlp, Some(Tlp::Amber));
         assert_eq!(threat.last_seen, Some("2024-12-01T12:00:00Z".to_string()));
     }
 }

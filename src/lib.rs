@@ -138,6 +138,18 @@ static THREAT_LEVEL_VALS: [wireshark_ffi::value_string; 6] = [
     wireshark_ffi::value_string { value: 0, strptr: std::ptr::null() },
 ];
 
+/// Value strings for TLP (Traffic Light Protocol) field (enables filter autocomplete)
+/// TLP is a standard with fixed values defined in the ThreatDB schema
+static TLP_VALS: [wireshark_ffi::value_string; 6] = [
+    wireshark_ffi::value_string { value: 1, strptr: c"RED".as_ptr() },
+    wireshark_ffi::value_string { value: 2, strptr: c"AMBER+STRICT".as_ptr() },
+    wireshark_ffi::value_string { value: 3, strptr: c"AMBER".as_ptr() },
+    wireshark_ffi::value_string { value: 4, strptr: c"GREEN".as_ptr() },
+    wireshark_ffi::value_string { value: 5, strptr: c"CLEAR".as_ptr() },
+    // Null terminator
+    wireshark_ffi::value_string { value: 0, strptr: std::ptr::null() },
+];
+
 /// Static storage for header field registration info
 /// These MUST be static because Wireshark keeps pointers to them
 static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
@@ -270,8 +282,9 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"TLP".as_ptr(),
                 abbrev: c"matchy.tlp".as_ptr(),
-                type_: FT_STRING,
-                display: BASE_NONE,
+                type_: FT_UINT8,
+                display: BASE_DEC,
+                // Note: strings pointer is set at runtime in register_fields()
                 strings: std::ptr::null(),
                 bitmask: 0,
                 blurb: c"Traffic Light Protocol marking for information sharing".as_ptr(),
@@ -369,9 +382,10 @@ unsafe fn register_fields() {
     HF_ARRAY[7].p_id = std::ptr::addr_of_mut!(HF_THREAT_TLP);
     HF_ARRAY[8].p_id = std::ptr::addr_of_mut!(HF_THREAT_LAST_SEEN);
 
-    // Set the value_string pointer for threat level field (enables filter autocomplete)
+    // Set the value_string pointers for enum fields (enables filter autocomplete)
     // This must be done at runtime because we can't reference static data in const context
     HF_ARRAY[1].hfinfo.strings = THREAT_LEVEL_VALS.as_ptr() as *const libc::c_void;
+    HF_ARRAY[7].hfinfo.strings = TLP_VALS.as_ptr() as *const libc::c_void;
 
     proto_register_field_array(PROTO_MATCHY, HF_ARRAY.as_mut_ptr(), HF_ARRAY.len() as c_int);
 

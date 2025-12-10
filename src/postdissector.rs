@@ -515,9 +515,8 @@ unsafe fn add_threat_to_tree(
         proto_tree_add_uint(subtree, hf.confidence, tvb, 0, 0, confidence as libc::c_uint);
     }
 
-    if let Some(ref tlp) = threat.tlp {
-        let tlp_str = to_c_string(tlp);
-        proto_tree_add_string(subtree, hf.tlp, tvb, 0, 0, tlp_str.as_ptr());
+    if let Some(tlp) = threat.tlp {
+        proto_tree_add_uint(subtree, hf.tlp, tvb, 0, 0, tlp.as_u8() as libc::c_uint);
     }
 
     if let Some(ref last_seen) = threat.last_seen {
