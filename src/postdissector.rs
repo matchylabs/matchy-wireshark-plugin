@@ -495,9 +495,8 @@ unsafe fn add_threat_to_tree(
         return;
     }
 
-    // Add threat details (Wireshark copies string values for FT_STRINGZ)
-    let level_str = to_c_string(threat.level.display_str());
-    proto_tree_add_string(subtree, hf.level, tvb, 0, 0, level_str.as_ptr());
+    // Add threat level as uint8 (value_string provides display text and autocomplete)
+    proto_tree_add_uint(subtree, hf.level, tvb, 0, 0, threat.level.as_u8() as libc::c_uint);
 
     let category_str = to_c_string(&threat.category);
     proto_tree_add_string(subtree, hf.category, tvb, 0, 0, category_str.as_ptr());

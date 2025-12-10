@@ -126,6 +126,18 @@ unsafe extern "C" fn proto_register_matchy() {
     register_toolbar();
 }
 
+/// Value strings for threat level field (enables filter autocomplete)
+/// Must be null-terminated array
+static THREAT_LEVEL_VALS: [wireshark_ffi::value_string; 6] = [
+    wireshark_ffi::value_string { value: 4, strptr: c"Critical".as_ptr() },
+    wireshark_ffi::value_string { value: 3, strptr: c"High".as_ptr() },
+    wireshark_ffi::value_string { value: 2, strptr: c"Medium".as_ptr() },
+    wireshark_ffi::value_string { value: 1, strptr: c"Low".as_ptr() },
+    wireshark_ffi::value_string { value: 0, strptr: c"Unknown".as_ptr() },
+    // Null terminator
+    wireshark_ffi::value_string { value: 0, strptr: std::ptr::null() },
+];
+
 /// Static storage for header field registration info
 /// These MUST be static because Wireshark keeps pointers to them
 static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
@@ -153,8 +165,10 @@ static mut HF_ARRAY: [wireshark_ffi::hf_register_info; 9] = {
             hfinfo: header_field_info {
                 name: c"Threat Level".as_ptr(),
                 abbrev: c"matchy.level".as_ptr(),
-                type_: FT_STRING,
-                display: BASE_NONE,
+                type_: FT_UINT8,
+                display: BASE_DEC,
+                // Note: strings pointer is set at runtime in proto_register_matchy
+                // because we can't reference THREAT_LEVEL_VALS in const context
                 strings: std::ptr::null(),
                 bitmask: 0,
                 blurb: c"Severity level of the threat".as_ptr(),
@@ -354,6 +368,10 @@ unsafe fn register_fields() {
     HF_ARRAY[6].p_id = std::ptr::addr_of_mut!(HF_THREAT_CONFIDENCE);
     HF_ARRAY[7].p_id = std::ptr::addr_of_mut!(HF_THREAT_TLP);
     HF_ARRAY[8].p_id = std::ptr::addr_of_mut!(HF_THREAT_LAST_SEEN);
+
+    // Set the value_string pointer for threat level field (enables filter autocomplete)
+    // This must be done at runtime because we can't reference static data in const context
+    HF_ARRAY[1].hfinfo.strings = THREAT_LEVEL_VALS.as_ptr() as *const libc::c_void;
 
     proto_register_field_array(PROTO_MATCHY, HF_ARRAY.as_mut_ptr(), HF_ARRAY.len() as c_int);
 

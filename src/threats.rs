@@ -3,13 +3,15 @@
 //! Handles IP/domain lookups and visual threat indicators.
 
 /// Threat level representation
+/// Integer values are used for Wireshark field encoding (enables autocomplete)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum ThreatLevel {
-    Critical,
-    High,
-    Medium,
-    Low,
-    Unknown,
+    Critical = 4,
+    High = 3,
+    Medium = 2,
+    Low = 1,
+    Unknown = 0,
 }
 
 impl ThreatLevel {
@@ -37,15 +39,9 @@ impl ThreatLevel {
         }
     }
 
-    /// Get display string
-    pub fn display_str(&self) -> &'static str {
-        match self {
-            ThreatLevel::Critical => "Critical",
-            ThreatLevel::High => "High",
-            ThreatLevel::Medium => "Medium",
-            ThreatLevel::Low => "Low",
-            ThreatLevel::Unknown => "Unknown",
-        }
+    /// Get numeric value for Wireshark field encoding
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
     }
 }
 

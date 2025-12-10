@@ -291,6 +291,7 @@ fn test_plugin_integration() {
     assert_eq!(results.len(), 4, "Expected 4 packets in test pcap");
 
     // Frame 1: dst=192.168.1.1 (exact match) -> high threat, malware
+    // Note: threat level is now FT_UINT8 with value_string, so raw output shows "3" for High
     let pkt1 = &results[0];
     assert_eq!(pkt1.frame_number, 1);
     assert_eq!(pkt1.dst_ip, "192.168.1.1");
@@ -300,7 +301,7 @@ fn test_plugin_integration() {
     );
     assert_eq!(
         pkt1.threat_level.as_deref(),
-        Some("High"),
+        Some("3"), // High = 3
         "Frame 1 threat level"
     );
     assert_eq!(
@@ -319,7 +320,7 @@ fn test_plugin_integration() {
     );
     assert_eq!(
         pkt2.threat_level.as_deref(),
-        Some("Medium"),
+        Some("2"), // Medium = 2
         "Frame 2 threat level"
     );
     assert_eq!(
@@ -338,7 +339,7 @@ fn test_plugin_integration() {
     );
     assert_eq!(
         pkt3.threat_level.as_deref(),
-        Some("High"),
+        Some("3"), // High = 3
         "Frame 3 threat level"
     );
     assert_eq!(
@@ -498,6 +499,52 @@ fn test_display_filter() {
     assert_eq!(
         frames.len(), 2,
         "Two-pass filter 'matchy.level == \"High\"' should match 2 frames, got: {:?}", frames
+    );
+
+    // Test 6: Numeric filter for threat level (value_string allows both)
+    // High = 3 in the ThreatLevel enum
+    let output = Command::new("tshark")
+        .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
+        .args([
+            "-o", &db_pref,
+            "-r", pcap_path.to_str().unwrap(),
+            "-Y", "matchy.level == 3",
+            "-T", "fields",
+            "-e", "frame.number",
+        ])
+        .output()
+        .expect("Failed to run tshark with numeric filter");
+
+    assert!(output.status.success(), "tshark numeric filter command failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    
+    assert_eq!(
+        frames.len(), 2,
+        "Numeric filter 'matchy.level == 3' should match 2 frames (same as High), got: {:?}", frames
+    );
+
+    // Test 7: Comparison operators (threat level >= Medium)
+    // Medium = 2, so this should match frames with High (3) and Medium (2)
+    let output = Command::new("tshark")
+        .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
+        .args([
+            "-o", &db_pref,
+            "-r", pcap_path.to_str().unwrap(),
+            "-Y", "matchy.level >= 2",
+            "-T", "fields",
+            "-e", "frame.number",
+        ])
+        .output()
+        .expect("Failed to run tshark with comparison filter");
+
+    assert!(output.status.success(), "tshark comparison filter command failed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
+    
+    assert_eq!(
+        frames.len(), 3,
+        "Comparison filter 'matchy.level >= 2' should match 3 frames (High + Medium), got: {:?}", frames
     );
 
     eprintln!("All display filter tests passed!");

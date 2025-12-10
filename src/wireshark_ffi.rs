@@ -103,6 +103,22 @@ pub const FT_STRING: c_int = 26;
 pub const FT_STRINGZ: c_int = 27;
 
 // ============================================================================
+// Value Strings (for enum-like field autocomplete)
+// ============================================================================
+
+/// Value string entry - maps integer value to display string
+/// Used for Wireshark filter autocomplete
+#[repr(C)]
+pub struct value_string {
+    pub value: u32,
+    pub strptr: *const c_char,
+}
+
+// Safety: value_string contains only a u32 and a pointer to static string data.
+// The pointer is only read by Wireshark, never written, so this is safe to share.
+unsafe impl Sync for value_string {}
+
+// ============================================================================
 // Field Display
 // ============================================================================
 
