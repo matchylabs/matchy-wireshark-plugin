@@ -31,7 +31,6 @@ static mut DISSECTOR_HANDLE: wireshark_ffi::dissector_handle_t = std::ptr::null_
 /// (toolbar widget isn't ready during preferences_apply)
 static mut TOOLBAR_NEEDS_UPDATE: bool = false;
 
-
 /// Global protocol ID (set during registration)
 static mut PROTO_MATCHY: c_int = -1;
 
@@ -129,26 +128,62 @@ unsafe extern "C" fn proto_register_matchy() {
 /// Value strings for threat level field (enables filter autocomplete)
 /// Must be null-terminated array
 static THREAT_LEVEL_VALS: [wireshark_ffi::value_string; 6] = [
-    wireshark_ffi::value_string { value: 4, strptr: c"Critical".as_ptr() },
-    wireshark_ffi::value_string { value: 3, strptr: c"High".as_ptr() },
-    wireshark_ffi::value_string { value: 2, strptr: c"Medium".as_ptr() },
-    wireshark_ffi::value_string { value: 1, strptr: c"Low".as_ptr() },
-    wireshark_ffi::value_string { value: 0, strptr: c"Unknown".as_ptr() },
+    wireshark_ffi::value_string {
+        value: 4,
+        strptr: c"Critical".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 3,
+        strptr: c"High".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 2,
+        strptr: c"Medium".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 1,
+        strptr: c"Low".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 0,
+        strptr: c"Unknown".as_ptr(),
+    },
     // Null terminator
-    wireshark_ffi::value_string { value: 0, strptr: std::ptr::null() },
+    wireshark_ffi::value_string {
+        value: 0,
+        strptr: std::ptr::null(),
+    },
 ];
 
 /// Value strings for TLP (Traffic Light Protocol) field (enables filter autocomplete)
 /// TLP is a standard with fixed values defined in the ThreatDB schema
 /// Higher values = more restrictive (RED=5, CLEAR=1)
 static TLP_VALS: [wireshark_ffi::value_string; 6] = [
-    wireshark_ffi::value_string { value: 5, strptr: c"RED".as_ptr() },
-    wireshark_ffi::value_string { value: 4, strptr: c"AMBER+STRICT".as_ptr() },
-    wireshark_ffi::value_string { value: 3, strptr: c"AMBER".as_ptr() },
-    wireshark_ffi::value_string { value: 2, strptr: c"GREEN".as_ptr() },
-    wireshark_ffi::value_string { value: 1, strptr: c"CLEAR".as_ptr() },
+    wireshark_ffi::value_string {
+        value: 5,
+        strptr: c"RED".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 4,
+        strptr: c"AMBER+STRICT".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 3,
+        strptr: c"AMBER".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 2,
+        strptr: c"GREEN".as_ptr(),
+    },
+    wireshark_ffi::value_string {
+        value: 1,
+        strptr: c"CLEAR".as_ptr(),
+    },
     // Null terminator
-    wireshark_ffi::value_string { value: 0, strptr: std::ptr::null() },
+    wireshark_ffi::value_string {
+        value: 0,
+        strptr: std::ptr::null(),
+    },
 ];
 
 /// Static storage for header field registration info
@@ -575,15 +610,16 @@ unsafe fn register_toolbar() {
     let reload_entry = ext_toolbar_add_entry(
         toolbar,
         ext_toolbar_item_t::EXT_TOOLBAR_BUTTON,
-        c"Matchy".as_ptr(),                 // label (initial text, updated dynamically)
-        std::ptr::null(),                   // default value (not used for BUTTON)
-        c"Reload the Matchy threat database (configure path in Preferences > Protocols > Matchy)".as_ptr(),
-        false,                              // capture_only
-        std::ptr::null_mut(),               // value_list
-        false,                              // is_required
-        std::ptr::null(),                   // valid_regex
-        Some(toolbar_reload_callback),      // callback
-        std::ptr::null_mut(),               // user_data
+        c"Matchy".as_ptr(), // label (initial text, updated dynamically)
+        std::ptr::null(),   // default value (not used for BUTTON)
+        c"Reload the Matchy threat database (configure path in Preferences > Protocols > Matchy)"
+            .as_ptr(),
+        false,                         // capture_only
+        std::ptr::null_mut(),          // value_list
+        false,                         // is_required
+        std::ptr::null(),              // valid_regex
+        Some(toolbar_reload_callback), // callback
+        std::ptr::null_mut(),          // user_data
     );
 
     // Store the entry handle for later updates
@@ -685,7 +721,7 @@ unsafe extern "C" fn proto_reg_handoff_matchy() {
 
     // Create dissector handle first
     let handle = create_dissector_handle(postdissector::dissect_matchy, PROTO_MATCHY);
-    
+
     // Store handle for use in final registration callback
     DISSECTOR_HANDLE = handle;
 

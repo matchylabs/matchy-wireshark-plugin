@@ -391,11 +391,16 @@ fn test_display_filter() {
     let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
-            "-o", &db_pref,
-            "-r", pcap_path.to_str().unwrap(),
-            "-Y", "matchy.level == \"High\"",
-            "-T", "fields",
-            "-e", "frame.number",
+            "-o",
+            &db_pref,
+            "-r",
+            pcap_path.to_str().unwrap(),
+            "-Y",
+            "matchy.level == \"High\"",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
         ])
         .output()
         .expect("Failed to run tshark with filter");
@@ -403,10 +408,12 @@ fn test_display_filter() {
     assert!(output.status.success(), "tshark filter command failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    
+
     assert_eq!(
-        frames.len(), 2,
-        "Filter 'matchy.level == \"High\"' should match 2 frames, got: {:?}", frames
+        frames.len(),
+        2,
+        "Filter 'matchy.level == \"High\"' should match 2 frames, got: {:?}",
+        frames
     );
     assert!(frames.contains(&"1"), "Frame 1 should match High filter");
     assert!(frames.contains(&"3"), "Frame 3 should match High filter");
@@ -415,11 +422,16 @@ fn test_display_filter() {
     let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
-            "-o", &db_pref,
-            "-r", pcap_path.to_str().unwrap(),
-            "-Y", "matchy.level == \"Medium\"",
-            "-T", "fields",
-            "-e", "frame.number",
+            "-o",
+            &db_pref,
+            "-r",
+            pcap_path.to_str().unwrap(),
+            "-Y",
+            "matchy.level == \"Medium\"",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
         ])
         .output()
         .expect("Failed to run tshark with filter");
@@ -427,10 +439,12 @@ fn test_display_filter() {
     assert!(output.status.success(), "tshark filter command failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    
+
     assert_eq!(
-        frames.len(), 1,
-        "Filter 'matchy.level == \"Medium\"' should match 1 frame, got: {:?}", frames
+        frames.len(),
+        1,
+        "Filter 'matchy.level == \"Medium\"' should match 1 frame, got: {:?}",
+        frames
     );
     assert!(frames.contains(&"2"), "Frame 2 should match Medium filter");
 
@@ -438,11 +452,16 @@ fn test_display_filter() {
     let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
-            "-o", &db_pref,
-            "-r", pcap_path.to_str().unwrap(),
-            "-Y", "matchy.threat_detected",
-            "-T", "fields",
-            "-e", "frame.number",
+            "-o",
+            &db_pref,
+            "-r",
+            pcap_path.to_str().unwrap(),
+            "-Y",
+            "matchy.threat_detected",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
         ])
         .output()
         .expect("Failed to run tshark with filter");
@@ -450,21 +469,28 @@ fn test_display_filter() {
     assert!(output.status.success(), "tshark filter command failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    
+
     assert_eq!(
-        frames.len(), 3,
-        "Filter 'matchy.threat_detected' should match 3 frames, got: {:?}", frames
+        frames.len(),
+        3,
+        "Filter 'matchy.threat_detected' should match 3 frames, got: {:?}",
+        frames
     );
 
     // Test 4: Filter for category - should match specific frames
     let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
-            "-o", &db_pref,
-            "-r", pcap_path.to_str().unwrap(),
-            "-Y", "matchy.category == \"malware\"",
-            "-T", "fields",
-            "-e", "frame.number",
+            "-o",
+            &db_pref,
+            "-r",
+            pcap_path.to_str().unwrap(),
+            "-Y",
+            "matchy.category == \"malware\"",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
         ])
         .output()
         .expect("Failed to run tshark with filter");
@@ -472,33 +498,45 @@ fn test_display_filter() {
     assert!(output.status.success(), "tshark filter command failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    
+
     assert_eq!(
-        frames.len(), 2,
-        "Filter 'matchy.category == \"malware\"' should match 2 frames, got: {:?}", frames
+        frames.len(),
+        2,
+        "Filter 'matchy.category == \"malware\"' should match 2 frames, got: {:?}",
+        frames
     );
 
     // Test 5: Two-pass mode (closer to GUI behavior) - use -2 flag
     let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
-            "-o", &db_pref,
-            "-r", pcap_path.to_str().unwrap(),
-            "-2",  // Two-pass mode, similar to GUI
-            "-Y", "matchy.level == \"High\"",
-            "-T", "fields",
-            "-e", "frame.number",
+            "-o",
+            &db_pref,
+            "-r",
+            pcap_path.to_str().unwrap(),
+            "-2", // Two-pass mode, similar to GUI
+            "-Y",
+            "matchy.level == \"High\"",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
         ])
         .output()
         .expect("Failed to run tshark with two-pass filter");
 
-    assert!(output.status.success(), "tshark two-pass filter command failed");
+    assert!(
+        output.status.success(),
+        "tshark two-pass filter command failed"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    
+
     assert_eq!(
-        frames.len(), 2,
-        "Two-pass filter 'matchy.level == \"High\"' should match 2 frames, got: {:?}", frames
+        frames.len(),
+        2,
+        "Two-pass filter 'matchy.level == \"High\"' should match 2 frames, got: {:?}",
+        frames
     );
 
     // Test 6: Numeric filter for threat level (value_string allows both)
@@ -506,22 +544,32 @@ fn test_display_filter() {
     let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
-            "-o", &db_pref,
-            "-r", pcap_path.to_str().unwrap(),
-            "-Y", "matchy.level == 3",
-            "-T", "fields",
-            "-e", "frame.number",
+            "-o",
+            &db_pref,
+            "-r",
+            pcap_path.to_str().unwrap(),
+            "-Y",
+            "matchy.level == 3",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
         ])
         .output()
         .expect("Failed to run tshark with numeric filter");
 
-    assert!(output.status.success(), "tshark numeric filter command failed");
+    assert!(
+        output.status.success(),
+        "tshark numeric filter command failed"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    
+
     assert_eq!(
-        frames.len(), 2,
-        "Numeric filter 'matchy.level == 3' should match 2 frames (same as High), got: {:?}", frames
+        frames.len(),
+        2,
+        "Numeric filter 'matchy.level == 3' should match 2 frames (same as High), got: {:?}",
+        frames
     );
 
     // Test 7: Comparison operators (threat level >= Medium)
@@ -529,22 +577,32 @@ fn test_display_filter() {
     let output = Command::new("tshark")
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
-            "-o", &db_pref,
-            "-r", pcap_path.to_str().unwrap(),
-            "-Y", "matchy.level >= 2",
-            "-T", "fields",
-            "-e", "frame.number",
+            "-o",
+            &db_pref,
+            "-r",
+            pcap_path.to_str().unwrap(),
+            "-Y",
+            "matchy.level >= 2",
+            "-T",
+            "fields",
+            "-e",
+            "frame.number",
         ])
         .output()
         .expect("Failed to run tshark with comparison filter");
 
-    assert!(output.status.success(), "tshark comparison filter command failed");
+    assert!(
+        output.status.success(),
+        "tshark comparison filter command failed"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let frames: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
-    
+
     assert_eq!(
-        frames.len(), 3,
-        "Comparison filter 'matchy.level >= 2' should match 3 frames (High + Medium), got: {:?}", frames
+        frames.len(),
+        3,
+        "Comparison filter 'matchy.level >= 2' should match 3 frames (High + Medium), got: {:?}",
+        frames
     );
 
     eprintln!("All display filter tests passed!");

@@ -238,11 +238,8 @@ pub enum ext_toolbar_item_t {
 }
 
 /// Toolbar action callback signature
-pub type ext_toolbar_action_cb = unsafe extern "C" fn(
-    toolbar_item: *mut c_void,
-    item_data: *mut c_void,
-    user_data: *mut c_void,
-);
+pub type ext_toolbar_action_cb =
+    unsafe extern "C" fn(toolbar_item: *mut c_void, item_data: *mut c_void, user_data: *mut c_void);
 
 // On Windows, use raw-dylib to link directly against DLLs without needing import libraries.
 // This eliminates the need to generate .lib files from .dll in CI.
@@ -284,7 +281,7 @@ pub struct field_info {
     pub appendix_start: c_int,
     pub appendix_length: c_int,
     pub tree_type: c_int,
-    pub rep: *mut libc::c_void,   // item_label_t*
+    pub rep: *mut libc::c_void, // item_label_t*
     pub flags: u32,
     pub value: fvalue_t,
     pub ds_tvb: *mut tvbuff_t,
@@ -402,7 +399,6 @@ extern "C" {
         value: *const c_char,
     ) -> *mut proto_item;
 
-
     pub fn proto_tree_add_boolean(
         tree: *mut proto_tree,
         hfindex: c_int,
@@ -498,11 +494,7 @@ extern "C" {
     /// @param entry - the toolbar entry to update
     /// @param data - new value (as c_char* for strings)
     /// @param silent - if true, don't trigger callback
-    pub fn ext_toolbar_update_value(
-        entry: *mut ext_toolbar_t,
-        data: *mut c_void,
-        silent: bool,
-    );
+    pub fn ext_toolbar_update_value(entry: *mut ext_toolbar_t, data: *mut c_void, silent: bool);
 
     // ============================================================================
     // Field Lookup Functions (for extracting protocol fields by name)
@@ -526,10 +518,7 @@ extern "C" {
 
     /// Find field_info instances by field ID
     /// Returns a GPtrArray* of field_info* pointers
-    pub fn proto_find_finfo(
-        tree: *mut proto_tree,
-        hfindex: c_int,
-    ) -> *mut GPtrArray;
+    pub fn proto_find_finfo(tree: *mut proto_tree, hfindex: c_int) -> *mut GPtrArray;
 
     /// Get string representation of a field value
     /// Returns a string that is valid for the lifetime of the packet (wmem packet scope)
@@ -552,7 +541,10 @@ extern "C" {
 // Functions from GLib
 // On Windows, GLib is a separate DLL (libglib-2.0-0.dll)
 // On Unix, it's linked through the wireshark library
-#[cfg_attr(target_os = "windows", link(name = "libglib-2.0-0", kind = "raw-dylib"))]
+#[cfg_attr(
+    target_os = "windows",
+    link(name = "libglib-2.0-0", kind = "raw-dylib")
+)]
 #[cfg_attr(not(target_os = "windows"), link(name = "glib-2.0"))]
 extern "C" {
     /// Free a GPtrArray (but not the elements inside)
@@ -562,8 +554,11 @@ extern "C" {
     /// zero_terminated: whether to null-terminate
     /// clear_: whether to clear new elements to 0
     /// element_size: size of each element in bytes
-    pub fn g_array_new(zero_terminated: gboolean, clear_: gboolean, element_size: c_uint)
-        -> *mut GArray;
+    pub fn g_array_new(
+        zero_terminated: gboolean,
+        clear_: gboolean,
+        element_size: c_uint,
+    ) -> *mut GArray;
 
     /// Append values to a GArray
     pub fn g_array_append_vals(
@@ -770,7 +765,7 @@ pub unsafe fn extract_string_fields(tree: *const proto_tree, field_name: &str) -
         // Field not present in this packet - this is normal for non-DNS packets
         return results;
     }
-    
+
     let array = &*finfo_array;
 
     // Iterate through the array

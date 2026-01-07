@@ -79,29 +79,29 @@ const DOMAIN_FIELDS: &[&str] = &[
     "x509sat.printableString", // Certificate CN/SAN (PrintableString)
     "x509ce.dNSName",          // Certificate SAN dNSName
     // SIP/VoIP
-    "sip.from.host",        // SIP From header host
-    "sip.to.host",          // SIP To header host
-    "sip.contact.host",     // SIP Contact header host
-    "sip.r-uri.host",       // SIP Request-URI host
+    "sip.from.host",           // SIP From header host
+    "sip.to.host",             // SIP To header host
+    "sip.contact.host",        // SIP Contact header host
+    "sip.r-uri.host",          // SIP Request-URI host
     "sip.Via.sent-by.address", // SIP Via sent-by address
     // Kerberos
-    "kerberos.realm",       // Kerberos realm (domain)
-    "kerberos.crealm",      // Client realm
-    "kerberos.srealm",      // Server realm
+    "kerberos.realm",  // Kerberos realm (domain)
+    "kerberos.crealm", // Client realm
+    "kerberos.srealm", // Server realm
     // LDAP/Active Directory
-    "mscldap.hostname",     // MS CLDAP hostname
-    "mscldap.domain",       // MS CLDAP domain
-    "mscldap.forest",       // MS CLDAP forest
-    "mscldap.nb_domain",    // NetBIOS domain
-    "mscldap.nb_hostname",  // NetBIOS hostname
-    "ldap.baseObject",      // LDAP base DN
+    "mscldap.hostname",    // MS CLDAP hostname
+    "mscldap.domain",      // MS CLDAP domain
+    "mscldap.forest",      // MS CLDAP forest
+    "mscldap.nb_domain",   // NetBIOS domain
+    "mscldap.nb_hostname", // NetBIOS hostname
+    "ldap.baseObject",     // LDAP base DN
     // NetBIOS
-    "nbns.name",            // NetBIOS name
+    "nbns.name", // NetBIOS name
     // DHCP
     "dhcp.option.hostname", // DHCP client hostname
     // XMPP/Jabber (domain part of JID)
-    "xmpp.to",              // Destination JID
-    "xmpp.from",            // Source JID
+    "xmpp.to",   // Destination JID
+    "xmpp.from", // Source JID
 ];
 
 /// Fields to extract for URL/path intelligence matching
@@ -124,12 +124,12 @@ const URL_FIELDS: &[&str] = &[
 /// Fields to extract for email address intelligence matching
 const EMAIL_FIELDS: &[&str] = &[
     // IMF (Internet Message Format - parsed email headers)
-    "imf.from",        // From header
-    "imf.to",          // To header
-    "imf.cc",          // CC header
-    "imf.bcc",         // BCC header
-    "imf.reply_to",    // Reply-To header
-    "imf.sender",      // Sender header
+    "imf.from",         // From header
+    "imf.to",           // To header
+    "imf.cc",           // CC header
+    "imf.bcc",          // BCC header
+    "imf.reply_to",     // Reply-To header
+    "imf.sender",       // Sender header
     "imf.delivered_to", // Delivered-To header
     // SMTP
     "smtp.req.parameter", // MAIL FROM/RCPT TO parameters
@@ -159,9 +159,9 @@ const IP_FIELDS: &[&str] = &[
 /// Fields to extract for hash/fingerprint intelligence matching
 const HASH_FIELDS: &[&str] = &[
     // TLS/JA3 fingerprints
-    "tls.handshake.ja3",      // JA3 client fingerprint (MD5)
-    "tls.handshake.ja3_full", // JA3 full string
-    "tls.handshake.ja3s",     // JA3S server fingerprint (MD5)
+    "tls.handshake.ja3",       // JA3 client fingerprint (MD5)
+    "tls.handshake.ja3_full",  // JA3 full string
+    "tls.handshake.ja3s",      // JA3S server fingerprint (MD5)
     "tls.handshake.ja3s_full", // JA3S full string
     // SSH
     "ssh.host_key.data", // SSH host key (can be hashed)
@@ -228,7 +228,13 @@ pub unsafe extern "C" fn dissect_matchy(
     // If we have cached threats, just add them to the tree
     if let Some(threats) = cached_threats {
         for cached in threats {
-            add_threat_to_tree(tree, tvb, &cached.indicator, &cached.indicator_type, &cached.threat);
+            add_threat_to_tree(
+                tree,
+                tvb,
+                &cached.indicator,
+                &cached.indicator_type,
+                &cached.threat,
+            );
         }
         return 1;
     }
@@ -282,7 +288,7 @@ pub unsafe extern "C" fn dissect_matchy(
     // Extract and check domain/hostname fields from protocol tree
     for field_name in DOMAIN_FIELDS {
         let domains = extract_string_fields(tree, field_name);
-        
+
         for domain in domains {
             // Normalize: lowercase and strip trailing dot (DNS FQDN)
             let normalized = domain.trim_end_matches('.').to_lowercase();
@@ -429,8 +435,8 @@ fn lookup_string(db: &matchy::Database, value: &str) -> Option<ThreatData> {
 }
 
 /// Convert matchy DataValue to serde_json Value
-fn data_value_to_json(data: &matchy_data_format::DataValue) -> serde_json::Value {
-    use matchy_data_format::DataValue;
+fn data_value_to_json(data: &matchy::DataValue) -> serde_json::Value {
+    use matchy::DataValue;
 
     match data {
         DataValue::Map(map) => {
@@ -458,6 +464,7 @@ fn data_value_to_json(data: &matchy_data_format::DataValue) -> serde_json::Value
         }
         DataValue::Bool(b) => serde_json::Value::Bool(*b),
         DataValue::Pointer(_) => serde_json::Value::Null, // Internal use only
+        DataValue::Timestamp(ts) => serde_json::Value::Number((*ts).into()),
     }
 }
 
@@ -496,7 +503,14 @@ unsafe fn add_threat_to_tree(
     }
 
     // Add threat level as uint8 (value_string provides display text and autocomplete)
-    proto_tree_add_uint(subtree, hf.level, tvb, 0, 0, threat.level.as_u8() as libc::c_uint);
+    proto_tree_add_uint(
+        subtree,
+        hf.level,
+        tvb,
+        0,
+        0,
+        threat.level.as_u8() as libc::c_uint,
+    );
 
     let category_str = to_c_string(&threat.category);
     proto_tree_add_string(subtree, hf.category, tvb, 0, 0, category_str.as_ptr());
@@ -508,11 +522,25 @@ unsafe fn add_threat_to_tree(
     proto_tree_add_string(subtree, hf.indicator, tvb, 0, 0, indicator_str.as_ptr());
 
     let indicator_type_str = to_c_string(indicator_type);
-    proto_tree_add_string(subtree, hf.indicator_type, tvb, 0, 0, indicator_type_str.as_ptr());
+    proto_tree_add_string(
+        subtree,
+        hf.indicator_type,
+        tvb,
+        0,
+        0,
+        indicator_type_str.as_ptr(),
+    );
 
     // ThreatDB optional fields - only display if present
     if let Some(confidence) = threat.confidence {
-        proto_tree_add_uint(subtree, hf.confidence, tvb, 0, 0, confidence as libc::c_uint);
+        proto_tree_add_uint(
+            subtree,
+            hf.confidence,
+            tvb,
+            0,
+            0,
+            confidence as libc::c_uint,
+        );
     }
 
     if let Some(tlp) = threat.tlp {
