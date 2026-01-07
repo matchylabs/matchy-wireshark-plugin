@@ -40,12 +40,19 @@ fn tshark_command() -> Command {
 
     #[cfg(target_os = "windows")]
     if let Some(ws_dir) = get_wireshark_dir() {
-        // Set working directory to Wireshark install - LoadLibrary searches cwd for dependencies
         cmd.current_dir(&ws_dir);
-        // Also add to PATH for good measure
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.env("PATH", format!("{};{}", ws_dir.display(), path));
-        eprintln!("Set working dir and PATH to: {}", ws_dir.display());
+        eprintln!("Wireshark dir: {}", ws_dir.display());
+        // Debug: list DLLs in Wireshark directory
+        if let Ok(entries) = std::fs::read_dir(&ws_dir) {
+            let dlls: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .filter(|n| n.ends_with(".dll"))
+                .collect();
+            eprintln!("DLLs in Wireshark dir: {:?}", dlls);
+        }
     }
 
     cmd
