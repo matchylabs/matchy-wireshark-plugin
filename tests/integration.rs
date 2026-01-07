@@ -65,9 +65,10 @@ fn version_to_dir(version: &str) -> String {
 /// Set up a temporary plugin directory structure for testing.
 /// Copies all available plugin versions, just like the real install.
 /// Returns the path to the temp plugin dir (set WIRESHARK_PLUGIN_DIR to this).
-fn setup_test_plugin_dir() -> PathBuf {
+/// Uses a unique directory per test to avoid race conditions in parallel test runs.
+fn setup_test_plugin_dir(test_name: &str) -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let temp_dir = std::env::temp_dir().join("matchy-wireshark-test");
+    let temp_dir = std::env::temp_dir().join(format!("matchy-wireshark-test-{}", test_name));
 
     // Clean up any previous test directory
     let _ = std::fs::remove_dir_all(&temp_dir);
@@ -277,7 +278,7 @@ fn test_plugin_integration() {
     eprintln!("Detected Wireshark version: {}", ws_version);
 
     // Set up temp plugin directory with all built plugin versions
-    let plugin_dir = setup_test_plugin_dir();
+    let plugin_dir = setup_test_plugin_dir("integration");
     eprintln!("Using plugin directory: {}", plugin_dir.display());
 
     // Verify plugin loads correctly
@@ -372,7 +373,7 @@ fn test_display_filter() {
     eprintln!("Detected Wireshark version: {}", ws_version);
 
     // Set up temp plugin directory
-    let plugin_dir = setup_test_plugin_dir();
+    let plugin_dir = setup_test_plugin_dir("display_filter");
     eprintln!("Using plugin directory: {}", plugin_dir.display());
 
     // Verify plugin loads
