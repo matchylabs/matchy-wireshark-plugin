@@ -33,16 +33,19 @@ fn get_wireshark_dir() -> Option<PathBuf> {
     .find(|p| p.join("tshark.exe").exists())
 }
 
-/// Windows: Adds Wireshark dir to PATH so plugin DLL dependencies are found.
+/// Windows: Sets up environment so plugin DLL dependencies are found.
 fn tshark_command() -> Command {
     #[allow(unused_mut)]
     let mut cmd = Command::new("tshark");
 
     #[cfg(target_os = "windows")]
     if let Some(ws_dir) = get_wireshark_dir() {
+        // Set working directory to Wireshark install - LoadLibrary searches cwd for dependencies
+        cmd.current_dir(&ws_dir);
+        // Also add to PATH for good measure
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.env("PATH", format!("{};{}", ws_dir.display(), path));
-        eprintln!("Added Wireshark dir to PATH: {}", ws_dir.display());
+        eprintln!("Set working dir and PATH to: {}", ws_dir.display());
     }
 
     cmd
