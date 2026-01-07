@@ -7,3 +7,6 @@ rustflags = [
     "-C", "link-arg=-Wl,-rpath,@executable_path/../../../../lib",
     "-C", "link-arg=-Wl,-rpath,@executable_path/../../../../../lib",
 ]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
