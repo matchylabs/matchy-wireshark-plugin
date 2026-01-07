@@ -43,16 +43,6 @@ fn tshark_command() -> Command {
         cmd.current_dir(&ws_dir);
         let path = std::env::var("PATH").unwrap_or_default();
         cmd.env("PATH", format!("{};{}", ws_dir.display(), path));
-        eprintln!("Wireshark dir: {}", ws_dir.display());
-        // Debug: list DLLs in Wireshark directory
-        if let Ok(entries) = std::fs::read_dir(&ws_dir) {
-            let dlls: Vec<_> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.file_name().to_string_lossy().to_string())
-                .filter(|n| n.ends_with(".dll"))
-                .collect();
-            eprintln!("DLLs in Wireshark dir: {:?}", dlls);
-        }
     }
 
     cmd

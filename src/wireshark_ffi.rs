@@ -541,10 +541,7 @@ extern "C" {
 // Functions from GLib
 // On Windows, GLib is a separate DLL (libglib-2.0-0.dll)
 // On Unix, it's linked through the wireshark library
-#[cfg_attr(
-    target_os = "windows",
-    link(name = "libglib-2.0-0", kind = "raw-dylib")
-)]
+#[cfg_attr(target_os = "windows", link(name = "glib-2.0-0", kind = "raw-dylib"))]
 #[cfg_attr(not(target_os = "windows"), link(name = "glib-2.0"))]
 extern "C" {
     /// Free a GPtrArray (but not the elements inside)
