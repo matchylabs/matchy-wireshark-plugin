@@ -14,6 +14,40 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Windows: Returns Wireshark install dir for DLL search path setup.
+/// Plugin loading requires libwireshark.dll etc. to be findable.
+#[cfg(target_os = "windows")]
+fn get_wireshark_dir() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("WIRESHARK_DIR") {
+        let path = PathBuf::from(&dir);
+        if path.join("tshark.exe").exists() {
+            return Some(path);
+        }
+    }
+
+    [
+        PathBuf::from(r"C:\Program Files\Wireshark"),
+        PathBuf::from(r"C:\Program Files (x86)\Wireshark"),
+    ]
+    .into_iter()
+    .find(|p| p.join("tshark.exe").exists())
+}
+
+/// Windows: Adds Wireshark dir to PATH so plugin DLL dependencies are found.
+fn tshark_command() -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new("tshark");
+
+    #[cfg(target_os = "windows")]
+    if let Some(ws_dir) = get_wireshark_dir() {
+        let path = std::env::var("PATH").unwrap_or_default();
+        cmd.env("PATH", format!("{};{}", ws_dir.display(), path));
+        eprintln!("Added Wireshark dir to PATH: {}", ws_dir.display());
+    }
+
+    cmd
+}
+
 /// Get the path to the test fixtures directory
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -140,9 +174,8 @@ fn setup_test_plugin_dir(test_name: &str) -> PathBuf {
     temp_dir
 }
 
-/// Check if the matchy plugin is loaded by Wireshark (with custom plugin dir)
 fn plugin_loaded_with_dir(plugin_dir: &PathBuf) -> bool {
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", plugin_dir)
         .args(["-G", "plugins"])
         .output();
@@ -186,7 +219,7 @@ fn run_tshark_test(plugin_dir: &PathBuf) -> Result<Vec<PacketResult>, String> {
     // Use -o to set the database path, avoiding conflicts with saved preferences
     let db_pref = format!("matchy.database_path:{}", mxy_path.display());
 
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", plugin_dir)
         .args([
             "-o",
@@ -389,7 +422,7 @@ fn test_display_filter() {
     let db_pref = format!("matchy.database_path:{}", mxy_path.display());
 
     // Test 1: Filter for High threat level - should match frames 1 and 3
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
             "-o",
@@ -420,7 +453,7 @@ fn test_display_filter() {
     assert!(frames.contains(&"3"), "Frame 3 should match High filter");
 
     // Test 2: Filter for Medium threat level - should match frame 2
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
             "-o",
@@ -450,7 +483,7 @@ fn test_display_filter() {
     assert!(frames.contains(&"2"), "Frame 2 should match Medium filter");
 
     // Test 3: Filter for threat_detected (boolean) - should match frames 1, 2, 3
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
             "-o",
@@ -479,7 +512,7 @@ fn test_display_filter() {
     );
 
     // Test 4: Filter for category - should match specific frames
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
             "-o",
@@ -508,7 +541,7 @@ fn test_display_filter() {
     );
 
     // Test 5: Two-pass mode (closer to GUI behavior) - use -2 flag
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
             "-o",
@@ -542,7 +575,7 @@ fn test_display_filter() {
 
     // Test 6: Numeric filter for threat level (value_string allows both)
     // High = 3 in the ThreatLevel enum
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
             "-o",
@@ -575,7 +608,7 @@ fn test_display_filter() {
 
     // Test 7: Comparison operators (threat level >= Medium)
     // Medium = 2, so this should match frames with High (3) and Medium (2)
-    let output = Command::new("tshark")
+    let output = tshark_command()
         .env("WIRESHARK_PLUGIN_DIR", &plugin_dir)
         .args([
             "-o",
