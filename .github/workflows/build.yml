@@ -36,6 +36,43 @@ jobs:
         run: |
           checkbashisms -f install.sh
 
+  compatibility:
+    name: Stable Wireshark + Matchy main
+    runs-on: namespace-profile-macos-26-1
+    env:
+      # The plugin uses Matchy's Rust API and does not need its generated C header.
+      MATCHY_SKIP_CBINDGEN: "1"
+    steps:
+      - uses: namespacelabs/nscloud-checkout-action@v8
+
+      - name: Set up cache
+        uses: namespacelabs/nscloud-cache-action@v1
+        with:
+          cache: |
+            rust
+            brew
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install current stable Wireshark
+        run: |
+          brew install wireshark
+          tshark --version
+
+      - name: Resolve Matchy main
+        run: |
+          cargo add matchy \
+            --git https://github.com/matchylabs/matchy.git \
+            --branch main \
+            --no-default-features
+
+      - name: Build and test compatibility
+        run: |
+          cargo build
+          cargo test --lib
+          cargo test --test integration -- --nocapture
+
   build:
     strategy:
       matrix:

@@ -365,12 +365,10 @@ unsafe extern "C" fn preferences_apply() {
     // Load database from the configured path
     let path = std::ffi::CStr::from_ptr(DATABASE_PATH);
     if let Ok(path_str) = path.to_str() {
-        if !path_str.is_empty() {
-            if matchy_load_database(DATABASE_PATH) == 0 {
-                // Database loaded successfully - force redissection so our
-                // threat cache is populated for filter matching
-                wireshark_ffi::plugin_if_apply_filter(c"".as_ptr(), true);
-            }
+        if !path_str.is_empty() && matchy_load_database(DATABASE_PATH) == 0 {
+            // Database loaded successfully - force redissection so our
+            // threat cache is populated for filter matching
+            wireshark_ffi::plugin_if_apply_filter(c"".as_ptr(), true);
         }
     }
 }

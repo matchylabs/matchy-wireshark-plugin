@@ -66,9 +66,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.100"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "arc-swap"
@@ -398,18 +398,18 @@ checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "lru"
-version = "0.16.2"
+version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96051b46fc183dc9cd4a223960ef37b9af631b55191852a8274bfef064cda20f"
+checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
 dependencies = [
  "hashbrown",
 ]
 
 [[package]]
 name = "matchy"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5f95243917c6a2da18e2510da99f9ee1df61aa7a8e5985db5b856f8f86853cf"
+checksum = "69ad1c5ab2610ce3f2e2108eb8d666f4a870d19cb7dc4e6ec54afa1699fb9c2e"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -445,9 +445,9 @@ dependencies = [
 
 [[package]]
 name = "matchy-ac"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34f86a975548edd3478ec734300bd7f51d69bfa936bef750ae643032df1e8392"
+checksum = "eb21cb24abd09f271010743fe3e2348113007cb07c8f58cd32427d8f5104cfb6"
 dependencies = [
  "matchy-match-mode",
  "memchr",
@@ -456,9 +456,9 @@ dependencies = [
 
 [[package]]
 name = "matchy-data-format"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fd361eebb8b68cdd02896e8e0783a8c1db17e972c78ea631ca588ee61bc5461"
+checksum = "4db05a7500545094372a9c2ef3f6722bea59ea1389ce326e394c5062bec5a2a4"
 dependencies = [
  "chrono",
  "serde",
@@ -466,9 +466,9 @@ dependencies = [
 
 [[package]]
 name = "matchy-extractor"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f85c0ec79996c5fc2ab57d92284d5c522bf3680fb2d59cbb20fb17954c291e9"
+checksum = "183cf792fb44016f4b801e2092c76e63f59b943f4ce63b6a519c82a15953c597"
 dependencies = [
  "bech32",
  "bs58",
@@ -480,9 +480,9 @@ dependencies = [
 
 [[package]]
 name = "matchy-format"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7f6a8b54de565319e1f5734124fe7b71d0e9e978f35f4447a5cab3d19bab0f8"
+checksum = "7f1f9025a3306fa58f57dda2e6aa16d5f54b25ea26416afe0e434683157827b2"
 dependencies = [
  "anyhow",
  "matchy-data-format",
@@ -500,15 +500,15 @@ dependencies = [
 
 [[package]]
 name = "matchy-ip-trie"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91d2a1e975aef78a404688bf9dd467c8c45a9573924d857996ab2e458e12b454"
+checksum = "0d51615375c5d0e41c6d6168d2ebd596036580ce86c7ba102fd1445b989b7b5d"
 
 [[package]]
 name = "matchy-literal-hash"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9409a4c6ad3fd758b95de5219b7f0d16799bd9ee98af03630eb2d64ac2dffb50"
+checksum = "a45a8e5d61482aecd26063f4907470eb65b50514749452c97687d6da0cfb30d2"
 dependencies = [
  "matchy-match-mode",
  "rayon",
@@ -518,15 +518,15 @@ dependencies = [
 
 [[package]]
 name = "matchy-match-mode"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebf11947e5f960ef3c1ee6c3010fabfaa0bfb7bec59f11eb061502c5cc83a85d"
+checksum = "5336fa1b8672cec6f4f12c26410bbccd108cca644d2d3a28cbc92d80af514cb0"
 
 [[package]]
 name = "matchy-paraglob"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b177e368a84d4d0fd73bb2515ef651d68e71da1fc40870b2b0a3afbf46aa9d7a"
+checksum = "1e0dba7a63cd842405fed464d592aa7e31b6183b0081b520b0feaa49d7127b2a"
 dependencies = [
  "anyhow",
  "matchy-ac",
@@ -556,9 +556,9 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "memmap2"
-version = "0.9.9"
+version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "744133e4a0e0a658e1374cf3bf8e415c4052a15a111acd372764c55b4177d490"
+checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
 dependencies = [
  "libc",
 ]
