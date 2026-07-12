@@ -57,6 +57,7 @@ jobs:
 
       - name: Install current stable Wireshark
         run: |
+          brew update
           brew install wireshark
           tshark --version
 
@@ -123,6 +124,7 @@ jobs:
       - name: Install Wireshark (macOS)
         if: matrix.platform == 'macos'
         run: |
+          brew update
           brew install wireshark
       
       - name: Install Wireshark (Linux)
